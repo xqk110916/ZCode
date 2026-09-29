@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import type { Locale } from "@zcode/shared";
+import { ZCODE_PRODUCT_FLAVOR, type Locale } from "@zcode/shared";
 
 const MENU_KEY_NAME = "ZCode.OpenInZCode";
 const DIRECTORY_MENU_KEY = `HKCU\\Software\\Classes\\Directory\\shell\\${MENU_KEY_NAME}`;
@@ -84,6 +84,13 @@ export async function installWindowsOpenFolderContextMenu(options: {
   logger: Logger;
 }): Promise<void> {
   if (options.platform !== "win32") {
+    return;
+  }
+
+  // 菜单注册表键（ZCode.OpenInZCode）全产品共用：Preview 包写入会把正式版
+  // 「在ZCode中打开」的指向改成本包可执行文件（spec: specs/desktop/preview-flavor-shell-isolation.md）。
+  // Preview 与正式版并排安装时跳过注册，注册表项由正式版独占维护。
+  if (ZCODE_PRODUCT_FLAVOR === "preview") {
     return;
   }
 

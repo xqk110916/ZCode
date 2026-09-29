@@ -361,7 +361,21 @@
   !endif
 !macroend
 
+; electron-builder 在 createDesktopShortcut/createStartMenuShortcut 均为 false 时（如 Preview
+; 身份打包）注入两个 DO_NOT_CREATE_*_SHORTCUT，下方修复宏整体不会被插入，
+; ZCodeReadShortcutTarget 随之失去引用；NSIS 在 /WX 下把 6010 未引用告警当错误，
+; 会直接中断打包（与卸载器场景同因）。这里用伞形开关把函数一并排除出编译单元。
+!ifndef ZCODE_ANY_SHORTCUT_CREATION_ENABLED
+  !ifndef DO_NOT_CREATE_START_MENU_SHORTCUT
+    !define ZCODE_ANY_SHORTCUT_CREATION_ENABLED
+  !endif
+  !ifndef DO_NOT_CREATE_DESKTOP_SHORTCUT
+    !define ZCODE_ANY_SHORTCUT_CREATION_ENABLED
+  !endif
+!endif
+
 !ifndef BUILD_UNINSTALLER
+!ifdef ZCODE_ANY_SHORTCUT_CREATION_ENABLED
   ; electron-builder 会先编译卸载器，但快捷方式目标读取只在安装更新流程中调用。
   ; 若把函数带入卸载器，NSIS 会产生 6010 未引用告警，并在 /WX 下直接中断 Windows CI。
   Function ZCodeReadShortcutTarget
@@ -386,6 +400,7 @@
       Pop $R1
       Exch $R9
   FunctionEnd
+!endif
 !endif
 
 !macro ZCodeRepairShortcutIfNeeded SHORTCUT_PATH LABEL_PREFIX

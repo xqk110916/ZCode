@@ -208,6 +208,9 @@ function resolveElectronDownloadMirror(env = process.env) {
 const commandStdoutMaxBuffer = 64 * 1024 * 1024;
 // 产物后缀只标记后端环境（_TEST）；身份靠 productName 区分，生产后端的 Preview 包没有后缀。
 const desktopArtifactEnvSuffix = resolveDesktopArtifactSuffix(process.env);
+// Preview 是与正式版并排安装的测试身份（spec: specs/desktop/preview-flavor-shell-isolation.md），
+// shell 集成层（快捷方式、协议注册）一律让给正式版，见 protocols 与 nsis 配置处的按 flavor 裁剪。
+const isPreviewIdentity = desktopProductIdentity.flavor === "preview";
 
 // Preview 是内部签名测试包。CI 明确打开 macOS 签名时若没有身份，必须在生成未签名包前失败，
 // 避免“产物存在”被误认为已经走完和生产版相同的签名链路。
@@ -648,15 +651,20 @@ export default {
   // postinstall 会先优先复用 node-pty 自带的 Windows 预编译产物，其他平台再按需 electron-rebuild。
   // 打包阶段统一复用安装时准备好的原生文件，避免 electron-builder 再触发一轮不受控的本地编译。
   npmRebuild: false,
-  // OAuth deep link 协议注册（macOS 打包后需要 Info.plist 中声明 CFBundleURLTypes）
-  protocols: [
-    {
-      // 协议处理器的展示名之前使用小写 scheme，打包产物里的协议描述无法体现产品名。
-      // 展示名跟随安装包身份；scheme 仍保持 zcode，因此两个应用中最后注册者会成为默认 handler。
-      name: desktopProductIdentity.productName,
-      schemes: ["zcode"],
-    },
-  ],
+  // OAuth deep link 协议注册（macOS 打包后需要 Info.plist 中声明 CFBundleURLTypes）。
+  // scheme 固定为 zcode，不区分 flavor：谁注册谁成为默认 handler。Preview 若也注册，
+  // 后安装会抢占正式版的 deep link；且 NSIS 卸载器会按自己的安装记录删除协议键，
+  // 反向破坏先装的正式版。Preview 身份因此完全不注册协议。
+  protocols: isPreviewIdentity
+    ? []
+    : [
+        {
+          // 协议处理器的展示名之前使用小写 scheme，打包产物里的协议描述无法体现产品名。
+          // 展示名跟随安装包身份；scheme 仍保持 zcode，因此两个应用中最后注册者会成为默认 handler。
+          name: desktopProductIdentity.productName,
+          schemes: ["zcode"],
+        },
+      ],
   mac: {
     target: ["dmg", "zip"],
     category: "public.app-category.developer-tools",
@@ -750,6 +758,15 @@ export default {
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
+    // Preview 包与正式版并排安装，不创建任何快捷方式。两个开关置 false 后 electron-builder
+    // 会注入 DO_NOT_CREATE_*_SHORTCUT，上游模板的 addDesktopLink/addStartMenuLink 与本仓库
+    // build/installer.nsh 的快捷方式修复宏（ZCodeRepairShortcutIfNeeded）都会整体跳过。
+    ...(isPreviewIdentity
+      ? {
+          createDesktopShortcut: false,
+          createStartMenuShortcut: false,
+        }
+      : {}),
     // Windows 安装流程使用独立安装图标，和应用运行时图标解耦。
     installerIcon: "build/icon_installer.ico",
     uninstallerIcon: "build/icon_installer.ico",

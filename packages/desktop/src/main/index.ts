@@ -1860,7 +1860,12 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
   return win;
 }
 
-registerDeepLinkProtocol(logger, { iconPath: linuxDesktopIntegrationIconPath });
+// zcode:// scheme 全产品共用，谁注册谁抢占默认 handler（spec: specs/desktop/preview-flavor-shell-isolation.md）。
+// Preview 包与正式版并排安装，运行时不再注册协议，避免改写正式版的 deep link 归属；
+// open-url 监听保留，macOS 上系统仍会把已指向本应用的 deep link 分发进来。
+if (ZCODE_PRODUCT_FLAVOR !== "preview") {
+  registerDeepLinkProtocol(logger, { iconPath: linuxDesktopIntegrationIconPath });
+}
 app.on("open-url", (event, url) => {
   event.preventDefault();
   const workspacePath = extractOpenWorkspacePathFromDeepLinkUrl(url);
