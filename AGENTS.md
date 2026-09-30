@@ -71,6 +71,12 @@
 - Web 端没有系统对话框等桌面能力：此类场景优先复用服务端能力代弹系统对话框（如引导(新)的 `IGuideEntryService.pickDirectory`），能力缺失或非 Windows 时沿用降级口径（服务端目录浏览器 `DirectoryBrowser`、`preferDirectoryBrowser`）；禁止在 Web 上下文直接依赖 `platform.selectDirectory` 等桌面专属调用。
 - 发版前以 Electron 桌面端为主做一轮回归：覆盖本迭代改动的功能点与打包验证；在此之前桌面端问题不得积压到发版才暴露。
 
+## Git 提交
+
+- 提交信息遵循 Conventional Commits（`feat` / `fix` / `docs` / `chore` / `refactor` 等前缀，可带 scope），正文说明动机与关键实现要点。
+- 每次提交都同步维护根目录 `CHANGELOG.md`：改动归入 Unreleased 的对应分组（新增 / 修复 / 文档与工程），按功能维度描述用户可感知的变化，不复述提交信息；changelog 更新与代码改动放进同一个提交。
+- Unreleased 下的「提交清单」哈希表在阶段性收口时补齐，日常提交不必逐条登记。
+
 ## UI 与平台边界
 
 - 遵守 `DESIGN.md`，复用已有组件，兼顾桌面与手机 Web 的布局、交互、主题和国际化。
