@@ -68,10 +68,19 @@ export {
   getFeedbackAttachmentDir,
   getFeedbackLogArchiveDir,
   getGitCheckpointIndexRootDir,
+  getTasksIndexDatabasePath,
+  getCustomResourcesDatabasePath,
   copyDataDirectory,
   validateDataBaseDirTarget,
   ZCODE_WINDOWS_APP_INSTALL_DIR_ENV,
 } from "./paths.js";
+export { CustomResourcesRepo } from "./customResources/customResourcesRepo.js";
+export type {
+  TaskGroupStorePort,
+  TaskGroupTaskReaderPort,
+  TaskGroupTaskProjection,
+} from "./customResources/customResourcesRepo.js";
+export { ProjectSessionStore } from "./customResources/projectSessionStore.js";
 export { createGitService } from "./git/gitService.js";
 export { GitCommitMessageGenerator } from "./git/gitCommitMessageGenerator.js";
 export { createGitCheckpointService } from "./git/gitCheckpointService.js";
@@ -350,6 +359,7 @@ import { createZCodeTaskServiceAdapter } from "./zcode-agent/zcodeTaskServiceAda
 import { createZCodeSessionService } from "./zcode-session/zcodeSessionService.js";
 import { createZCodeTaskIndexSyncer } from "./zcode-agent/zcodeTaskIndexSyncer.js";
 import { TaskIndexRepo } from "./session/taskIndexRepo.js";
+import { CustomResourcesRepo } from "./customResources/customResourcesRepo.js";
 import { createBotsService } from "./bots/botsService.js";
 import { createBotRemoteWorkspaceService } from "./bots/botRemoteWorkspaceBridge.js";
 import type { SessionMessageSendRequested } from "#src/session/sessionMailbox.js";
@@ -1438,6 +1448,11 @@ export function createLocalServices(options: {
   // onboarding 资格与任务列表共用同一份全局 tasks-index；repo 懒加载数据库，提前构造不会
   // 增加启动 I/O，后续 session syncer 也继续复用这一实例。
   const taskIndexRepo = new TaskIndexRepo();
+  // 分组/项目自定义数据源（custom-resources.sqlite，specs/services/custom-resource-store.md）：
+  // TaskIndexRepo 的任务生命周期钩子经 TaskGroupStorePort 写分组，
+  // CustomResourcesRepo 的分组校验/join 经 TaskGroupTaskReaderPort 读 tasks-index。
+  const customResourcesRepo = new CustomResourcesRepo({ taskReader: taskIndexRepo });
+  taskIndexRepo.bindTaskGroupStore(customResourcesRepo);
   // onboarding 完成记录：userId 由登录态补全（apikey/未登录为 null）。
   const onboardingRecordService = createOnboardingRecordService({
     loadUserId: async () => (await oauthCredentialRepo.loadActiveUserProfile())?.id ?? null,
@@ -2331,6 +2346,7 @@ export function createLocalServices(options: {
   const zcodeTaskService = createZCodeTaskServiceAdapter({
     zcodeAgentService,
     taskIndexRepo,
+    customResourcesRepo,
     taskIndexSyncer: zcodeTaskIndexSyncer,
     settingService,
     cuaProductMcpServerResolver,
@@ -2430,7 +2446,7 @@ export function createLocalServices(options: {
       });
   // 注册链上的懒工厂（如 OffPeak）会各自创建 tasks-index sqlite repo；先收集到本数组，
   // services 集合建好后在 return 前统一登记进 sharedSqliteRepos 侧表
-  const sqliteReposToClose: Array<{ close(): void }> = [];
+  const sqliteReposToClose: Array<{ close(): void }> = [customResourcesRepo];
   const services = new ServiceCollection()
     .register(IFileService, fileService)
     .register(IMediaPreviewService, mediaPreviewService)

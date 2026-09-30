@@ -130,6 +130,7 @@ import type {
   SessionMessageSendRequested,
 } from "#src/session/sessionMailbox.js";
 import { TaskIndexRepo } from "#src/session/taskIndexRepo.js";
+import { CustomResourcesRepo } from "#src/customResources/customResourcesRepo.js";
 import type {
   IZCodeAgentService,
   ZCodeAgentServiceEvent,
@@ -178,6 +179,8 @@ interface TaskOverlay {
 interface CreateZCodeTaskServiceAdapterOptions {
   zcodeAgentService: IZCodeAgentService;
   taskIndexRepo?: TaskIndexRepo;
+  // 分组存储所有者（custom-resources.sqlite）；组合根与 taskIndexRepo 互为 port 绑定后传入。
+  customResourcesRepo?: CustomResourcesRepo;
   // syncer 现在持有 workspace emitter 和 broadcast 入口，adapter 必须共用同一实例，
   // 否则 desktop-continuous 路径和 task adapter 路径的事件订阅会分裂成两份，UI 收不全。
   taskIndexSyncer: ZCodeTaskIndexSyncer;
@@ -273,6 +276,14 @@ export function createZCodeTaskServiceAdapter(
     overlays: overlays.size,
   }));
   const taskIndexRepo = options.taskIndexRepo ?? new TaskIndexRepo();
+  // 分组存储已拆到 custom-resources.sqlite；未注入时分组方法显式失败（组合根始终注入）。
+  const customResourcesRepo = options.customResourcesRepo;
+  const requireCustomResourcesRepo = (): CustomResourcesRepo => {
+    if (!customResourcesRepo) {
+      throw new Error("ZCode task service adapter 缺少 customResourcesRepo，无法执行分组操作");
+    }
+    return customResourcesRepo;
+  };
   const taskIndexSyncer = options.taskIndexSyncer;
 
   // 之前 adapter 自带 notifySyncerSession 时把 syncer 视为可选；现在 syncer 是构造必填项，
@@ -2384,12 +2395,12 @@ export function createZCodeTaskServiceAdapter(
     },
 
     async createTaskGroup(params) {
-      const group = await taskIndexRepo.createTaskGroup(params);
+      const group = await requireCustomResourcesRepo().createTaskGroup(params);
       return group;
     },
 
     async renameTaskGroup(params) {
-      const group = await taskIndexRepo.renameTaskGroup(params);
+      const group = await requireCustomResourcesRepo().renameTaskGroup(params);
       for (const scope of params.workspaceScopes ?? []) {
         // grouped 结构变更无单任务 meta，沿用 task_meta_changed 驱动 grouped 视图重拉。
         emitWorkspaceTaskListChanged(scope, undefined, "task_meta_changed");
@@ -2398,7 +2409,7 @@ export function createZCodeTaskServiceAdapter(
     },
 
     async updateTaskGroupColor(params) {
-      const group = await taskIndexRepo.updateTaskGroupColor(params);
+      const group = await requireCustomResourcesRepo().updateTaskGroupColor(params);
       for (const scope of params.workspaceScopes ?? []) {
         emitWorkspaceTaskListChanged(scope, undefined, "task_meta_changed");
       }
@@ -2406,7 +2417,7 @@ export function createZCodeTaskServiceAdapter(
     },
 
     async deleteTaskGroup(params) {
-      await taskIndexRepo.deleteTaskGroup(params);
+      await requireCustomResourcesRepo().deleteTaskGroup(params);
       for (const scope of params.workspaceScopes ?? []) {
         emitWorkspaceTaskListChanged(scope, undefined, "task_meta_changed");
       }
@@ -2419,11 +2430,11 @@ export function createZCodeTaskServiceAdapter(
       // grouped 原始结构（不 join tasks 表）；任务内容由 sessions-index 提供，客户端 join。
       // 与 listGroupedTaskView 同口径保留 auto-archive 触发（进入 grouped 视图时清理超期任务）。
       await runWorkspaceTaskAutoArchive(params.workspaceScopes);
-      return taskIndexRepo.queryGroupedTaskViewStructure(params);
+      return requireCustomResourcesRepo().queryGroupedTaskViewStructure(params);
     },
 
     async applyGroupedTaskViewOrder(params) {
-      const result = await taskIndexRepo.applyGroupedTaskViewOrder({
+      const result = await requireCustomResourcesRepo().applyGroupedTaskViewOrder({
         ...params,
         // grouped 保存排序后的回包也必须继承列表查询的 glm provider 边界，
         // 否则历史外部 provider 的 task 会通过未过滤的二次查询短暂回到 UI。

@@ -187,6 +187,15 @@ export function getTasksIndexDatabasePath(): string {
   return join(getAppConfigDir(), "tasks-index.sqlite");
 }
 
+/**
+ * ~/.zcode/v2/custom-resources.sqlite
+ * 分组（task_groups 等 4 张表）与项目会话（resource_kv）的自定义数据源；
+ * 与 tasks-index.sqlite、setting.json 物理隔离，见 specs/services/custom-resource-store.md。
+ */
+export function getCustomResourcesDatabasePath(): string {
+  return join(getAppConfigDir(), "custom-resources.sqlite");
+}
+
 /** workspace 级身份键：远程优先使用 workspaceIdentity，本地回退 workspacePath。 */
 function getWorkspaceKey(workspacePath: string, workspaceIdentity?: string): string {
   return workspaceIdentity?.trim() || workspacePath;

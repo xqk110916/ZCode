@@ -14,6 +14,12 @@ import {
 } from "@zcode/shared";
 import type { ISettingService } from "./setting.js";
 import { normalizeSettingsPatch } from "#src/setting/normalizeSettingsPatch.js";
+import {
+  ProjectSessionStore,
+  splitProjectSessionPatch,
+  stripProjectSessionFields,
+} from "#src/customResources/projectSessionStore.js";
+import { createProjectSessionRouting } from "#src/setting/projectSessionRouting.js";
 import { copyDataDirectory, getDataBaseDir, validateDataBaseDirTarget } from "../paths.js";
 import { isEffectiveDevelopmentNodeEnv } from "../runtime-tools/nodeEnv.js";
 import { maybeThrowInjectedFsFault } from "../fs/fsFaultInjection.js";
@@ -205,7 +211,9 @@ async function writeSettings(
   maybeThrowInjectedFsFault({ operation: "writeFile", path: settingsFile });
   const raw = await readLegacyAccountConnectionSettingsFile(settingsFile);
   const rollbackFields = retainLegacyAccountConnectionFields(raw);
-  const persisted = { ...rollbackFields, ...settings };
+  // 项目会话三字段改存 custom-resources.sqlite（specs/services/custom-resource-store.md）；
+  // setting.json 不再持久化这三个 key，旧文件里的值视为废弃。
+  const persisted = { ...rollbackFields, ...stripProjectSessionFields(settings) };
   // 旧 Team 尚待 OAuth 补组织时，schema 的默认 {} 不是用户的新选择。
   // 普通偏好保存必须保留新字段缺席；只有迁移提交或用户显式选连接才结束旧导入。
   if (!commitAccountSelection && readIncompleteLegacyTeamConnections(raw).length > 0) {
@@ -238,6 +246,8 @@ export function createSettingServiceWithMigrations(): {
   prepareLegacyAccountConnections: (
     resolveOrganization: (connection: LegacyTeamConnection) => Promise<string | null>,
   ) => Promise<readonly ProviderFamilyDomain[]>;
+  /** 关闭项目会话 KV 的 sqlite 连接（dispose 链/测试收尾用）。 */
+  close: () => void;
 } {
   let updateQueue = Promise.resolve();
   let commitQueue = Promise.resolve();
@@ -272,6 +282,12 @@ export function createSettingServiceWithMigrations(): {
     await queued;
   };
 
+  // 项目会话三字段（lastWorkspaceSession / recentProjects / lastActiveTabIndex）改存
+  // custom-resources.sqlite；见 specs/services/custom-resource-store.md。
+  const projectSessionStore = new ProjectSessionStore();
+  const { readProjectSessionOverlay, applyProjectSessionOverlay } =
+    createProjectSessionRouting(projectSessionStore);
+
   const service: ISettingService = {
     async get(): Promise<AppSettings> {
       // 设置切换后可能立即创建或冷恢复 Session；读取若越过已入队写入，
@@ -279,7 +295,7 @@ export function createSettingServiceWithMigrations(): {
       await updateQueue;
       const result = await readSettingsWithMeta();
       if (!result.needsMigrationPersist) {
-        return result.settings;
+        return applyProjectSessionOverlay(result.settings);
       }
 
       await enqueueSettingsWrite(async (shouldCommit, enterCommitPhase) => {
@@ -293,12 +309,15 @@ export function createSettingServiceWithMigrations(): {
         await writeSettings(latest.settings, shouldCommit, runSettingsCommit, enterCommitPhase);
       });
 
-      return readSettings();
+      return applyProjectSessionOverlay(await readSettings());
     },
 
     async update(patch: Partial<AppSettings>, expectedAccountSettings): Promise<void> {
       const runUpdate = async (shouldCommit: () => boolean, enterCommitPhase: () => void) => {
         const validatedPatch = appSettingsPatchSchema.parse(normalizeSettingsPatch(patch));
+        const { projectSessionPatch, filePatch } = splitProjectSessionPatch(
+          validatedPatch as Record<string, unknown>,
+        );
         const current = await readSettings();
         if (expectedAccountSettings) {
           // 账号查询期间用户可能已手动切换。必须在同一写队列内校验，不能靠调用方先读再写。
@@ -313,24 +332,37 @@ export function createSettingServiceWithMigrations(): {
         }
         const merged = appSettingsSchema.parse({
           ...current,
-          ...validatedPatch,
+          ...filePatch,
         });
 
         // 打开工作区后会几乎同时写 recentProjects 和 lastWorkspaceSession。
         // 之前两个 update 都是基于各自读到的旧 settings 直接覆盖写回，
         // 后写入的补丁会把前一个字段整块抹掉，导致下次启动恢复不到会话。
-        // 这里把写入串行化，让每个补丁都基于上一次真正落盘后的最新状态继续合并。
-        if (merged.recentProjects) {
-          merged.recentProjects = [...new Set(merged.recentProjects)].slice(0, MAX_RECENT_PROJECTS);
+        // 写入串行化保持不变：文件字段与项目字段各自在队列内基于最新落盘状态合并，
+        // recentProjects 的去重上限逻辑随项目字段一起落到 KV。
+        const mergedProjectSession = appSettingsPatchSchema.parse({
+          ...(await readProjectSessionOverlay()),
+          ...projectSessionPatch,
+        });
+        if (mergedProjectSession.recentProjects) {
+          mergedProjectSession.recentProjects = [...new Set(mergedProjectSession.recentProjects)].slice(
+            0,
+            MAX_RECENT_PROJECTS,
+          );
         }
 
-        await writeSettings(
-          merged,
-          shouldCommit,
-          runSettingsCommit,
-          enterCommitPhase,
-          Object.hasOwn(patch, "providerFamilyConnectionSelections"),
-        );
+        if (Object.keys(filePatch).length > 0) {
+          await writeSettings(
+            merged,
+            shouldCommit,
+            runSettingsCommit,
+            enterCommitPhase,
+            Object.hasOwn(patch, "providerFamilyConnectionSelections"),
+          );
+        }
+        if (Object.keys(projectSessionPatch).length > 0) {
+          await projectSessionStore.write(mergedProjectSession);
+        }
       };
 
       await enqueueSettingsWrite(runUpdate);
@@ -443,6 +475,9 @@ export function createSettingServiceWithMigrations(): {
         },
       );
       return pending;
+    },
+    close() {
+      projectSessionStore.close();
     },
   };
 }
