@@ -35,6 +35,24 @@
 - `CONTEXT.md`：插件商店领域词汇；修改相关 UI 前阅读。
 - `DESIGN.md`：UI 设计规范；修改 UI 前阅读。
 
+### 桌面端打包
+
+打包分两档，平常改代码不要默认跑全量流水线：
+
+- **全量打包**（约 20 分钟）：首次打包、拉取新代码、runtime 资产或 agent CLI（`apps/zcode-cli`）有改动时使用。
+  `ZCODE_SKIP_REMOTE_ASSETS=1 pnpm bundle:desktop -- --os win --arch x64 --skip-prepare`
+- **快速打包**（约 7-14 分钟）：只改了桌面端代码或安装器配置时使用。
+  先 `pnpm --filter @zcode/desktop build:no-runtime-assets` 重建 `out/`，再
+  `pnpm bundle:desktop -- --os win --arch x64 --skip-prepare --skip-build`；
+  若 `out/` 无需重建（只改了 electron-builder 配置或 `build/installer.nsh`），直接执行后一条即可。
+
+说明：
+
+- `--skip-prepare` 跳过 `bundle.mjs` 里的第一次 runtime 资产准备；全量命令保留 `pnpm build` 内置的那次（含 agent bundle 构建），避免同一份工作执行两遍。
+- `ZCODE_SKIP_REMOTE_ASSETS=1` 跳过 mock-cdn 与跨平台 prebuild 下载，Windows 安装包不包含这些资产（CI 的 Windows job 同样跳过）。
+- 后端环境与产品身份通过环境变量透传给打包脚本：生产后端、可与正式版并排安装的 Preview 包用 `ZCODE_ENV=production ZCODE_PREVIEW_IDENTITY=1`（隔离规则见 `specs/desktop/preview-flavor-shell-isolation.md`）。
+- 产物在 `packages/desktop/dist/`。如果 `out/` 或 `bundled-agents/` 与当前源码可能不一致（拿不准就视为不一致），退回全量打包，不要用 skip 参数打出混版包。
+
 ## 实现与验证
 
 - 代码改动使用 `.agents/skills/architecture-governance/SKILL.md`，先运行架构检查，再读取目标模块的受控上下文。
@@ -45,6 +63,13 @@
 - 必须执行 `pnpm typecheck` 和 `pnpm lint`，报告真实结果，不将已有失败写成通过。
 - 使用异步文件和网络 IO；跨包导入使用公开入口，遵守现有路径别名。
 - 禁止 UI 直接调用 Repo、Service 引用 Runtime 具体实现、跨域导入实现细节及循环依赖。
+
+### 双端（Web / 桌面）开发与验证口径
+
+- 日常开发调试默认在 Web 端进行：`pnpm dev:web`（Web 客户端 + 服务端），功能验证以浏览器为准；Electron 桌面端不作为日常迭代的主要验证环境。
+- `packages/ui` 为两端共享层，改动默认同时影响 Web 与桌面。涉及平台能力差异的功能（目录/文件选择、窗口与标题栏、preload 注入、系统能力等）必须按两端各自的实现路径分别处理，不允许只实现或只验证单端即视为完成。
+- Web 端没有系统对话框等桌面能力：此类场景优先复用服务端能力代弹系统对话框（如引导(新)的 `IGuideEntryService.pickDirectory`），能力缺失或非 Windows 时沿用降级口径（服务端目录浏览器 `DirectoryBrowser`、`preferDirectoryBrowser`）；禁止在 Web 上下文直接依赖 `platform.selectDirectory` 等桌面专属调用。
+- 发版前以 Electron 桌面端为主做一轮回归：覆盖本迭代改动的功能点与打包验证；在此之前桌面端问题不得积压到发版才暴露。
 
 ## UI 与平台边界
 
