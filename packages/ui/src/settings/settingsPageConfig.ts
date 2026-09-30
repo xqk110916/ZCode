@@ -15,6 +15,7 @@ import {
   Blocks,
   Globe2,
   Cable,
+  Compass,
   WandSparkles,
   Keyboard,
   FileSearch,
@@ -59,6 +60,14 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "general",
     icon: Settings2,
     titleId: "settings.systemTitle",
+    groupId: "basics",
+  },
+  // 引导(新)：选择前后端项目文件夹批量加入工作区，交互/样式复刻首启引导页
+  // （specs/ui/settings-guide-new.md）。紧跟「系统」放在基础设置第二位。
+  {
+    id: "guideNew",
+    icon: Compass,
+    titleId: "settings.guideNew.title",
     groupId: "basics",
   },
   {

@@ -50,6 +50,8 @@ export interface WorkspaceSettingsLayerProps {
   onBack?: () => void;
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onOpenWorkspace?: () => void;
+  /** 设置「引导(新)」提交：批量把文件夹加入工作区项目并跳转激活第一个。 */
+  onAddWorkspaceProjects?: (paths: string[]) => void;
   allowOpenWorkspace?: RootProps["allowOpenWorkspace"];
   onLogin?: () => void;
   onLogout?: () => void;

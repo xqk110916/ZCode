@@ -500,6 +500,7 @@ function RootInner({
     handleOpenFolderFromWorkspaceMenu,
     handleCreateScratchWorkspace,
     handleCreateTask,
+    handleAddWorkspaceProjects,
     handleBackFromSettings,
   } = useRootWorkspaceActions({
     intl,
@@ -958,6 +959,7 @@ function RootInner({
     onBack: activeWorkspacePath ? handleBackFromSettings : undefined,
     onCreateTask: handleCreateTask,
     onOpenWorkspace: handleOpenWorkspace,
+    onAddWorkspaceProjects: handleAddWorkspaceProjects,
     allowOpenWorkspace,
     onLogin: !user ? handleOpenLoginEntry : undefined,
     onLogout: user ? handleLogout : undefined,

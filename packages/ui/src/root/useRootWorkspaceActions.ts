@@ -436,6 +436,57 @@ export function useRootWorkspaceActions({
     ],
   );
 
+  /**
+   * 设置「引导(新)」提交（specs/ui/settings-guide-new.md）：批量把文件夹加入工作区
+   * 项目分区并跳转激活第一个。路径来自本机目录选择框，不走 UNC/WSL 转换。
+   */
+  const handleAddWorkspaceProjects = useCallback(
+    async (paths: string[]) => {
+      const validPaths = [...new Set(paths.map((path) => path.trim()).filter(Boolean))];
+      if (validPaths.length === 0) {
+        return;
+      }
+      logger.info("[Root] handleAddWorkspaceProjects called", { count: validPaths.length });
+      try {
+        // 先逐个补齐项目 tab（去重、不抢焦点），再统一激活第一个并进入草稿态。
+        const { ensureWorkspaceTab } = tabStoreApi.getState();
+        for (const path of validPaths) {
+          ensureWorkspaceTab(path);
+        }
+        const firstPath = validPaths[0]!;
+        // 桌面端：第一个项目若已在其他窗口打开，则激活该窗口，本窗口只保留其余新 tab。
+        const result = await platform.activateOrSetWorkspace(firstPath);
+        if (!result.activated) {
+          addTab(firstPath);
+          startDraftInWorkspace(firstPath);
+        }
+        setWorkspaceActionError(null);
+
+        if (supportsSettings) {
+          // 与 handleSelectProject 同口径：只有本地窗口维护 recentProjects（去重、上限 10）。
+          const settings = await services.settingService.get();
+          const updated = [
+            ...validPaths,
+            ...settings.recentProjects.filter(
+              (projectPath) => !validPaths.includes(projectPath),
+            ),
+          ].slice(0, 10);
+          await services.settingService.update({ recentProjects: updated });
+        }
+      } catch (err) {
+        logger.error("[Root] handleAddWorkspaceProjects error:", err);
+      }
+    },
+    [
+      addTab,
+      platform,
+      services.settingService,
+      startDraftInWorkspace,
+      supportsSettings,
+      tabStoreApi,
+    ],
+  );
+
   const handleOpenWorkspace = useCallback(() => {
     if (!allowOpenWorkspace) {
       // Web 远程控制当前只保证“进入 desktop 已打开的 workspace”。
@@ -579,6 +630,7 @@ export function useRootWorkspaceActions({
     handleOpenFolderFromWorkspaceMenu,
     handleCreateScratchWorkspace,
     handleCreateTask,
+    handleAddWorkspaceProjects,
     handleBackFromSettings,
   };
 }

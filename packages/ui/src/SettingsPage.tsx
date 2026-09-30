@@ -55,6 +55,7 @@ import {
 } from "@/lib/accountProviderAccess.js";
 import { buildUsageEntitlementCacheKey } from "@/lib/usageEntitlementCache.js";
 import { ModelProviderSection } from "@/settings/ModelProviderSection.js";
+import { GuideSection } from "@/settings/GuideSection.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 import { useEnterpriseCodingPlanProducts } from "@/settings/model-provider-section/useEnterpriseCodingPlanProducts.js";
 import { UsageStatsSection, type UsageStatsSectionTab } from "@/settings/UsageStatsSection.js";
@@ -276,6 +277,7 @@ export function SettingsPage({
   onBack,
   onCreateTask,
   onOpenWorkspace,
+  onAddWorkspaceProjects,
   allowOpenWorkspace = true,
   onLogin,
   onLogout,
@@ -289,6 +291,7 @@ export function SettingsPage({
   onBack?: () => void;
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onOpenWorkspace?: () => void;
+  onAddWorkspaceProjects?: (paths: string[]) => void;
   allowOpenWorkspace?: boolean;
   onLogin?: () => void;
   onLogout?: () => void;
@@ -1781,6 +1784,11 @@ export function SettingsPage({
                               })
                             }
                           />
+                        ) : activeSection === "guideNew" ? (
+                          <ServiceProvider services={localHostServices}>
+                            {/* 引导记录与文件夹路径是本机事实源；激活远端 workspace 时也不能注入远端 Host。 */}
+                            <GuideSection onAddWorkspaceProjects={onAddWorkspaceProjects} />
+                          </ServiceProvider>
                         ) : activeSection === "appearance" ? (
                           <AppearanceSectionContent
                             codePreviewSettings={codePreviewSettings}

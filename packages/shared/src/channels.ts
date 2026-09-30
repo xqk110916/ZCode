@@ -92,6 +92,8 @@ export const ServiceChannels = {
   Broadcast: "broadcast",
   /** ZCode task wrapper 服务 */
   ZCodeTask: "zcode-task",
+  /** 设置「引导(新)」的项目引导记录服务（custom-resources.sqlite） */
+  GuideEntry: "guide-entry",
   /** 窗口 Host 聚合 workspace/task 投影与列表写路由 */
   WindowController: "window-controller",
   /** ZCode Protocol agent 服务 */

@@ -96,6 +96,11 @@ export type {
 
 // ZCode task wrapper service — task 列表/置顶/归档等 app 侧包装状态入口。
 export { IZCodeTaskService } from "./session/zcodeTaskService.js";
+export { IGuideEntryService } from "./customResources/guideEntryService.js";
+export type {
+  CreateGuideEntryInput,
+  ZCodeGuideEntry,
+} from "./customResources/guideEntryStore.js";
 export type {
   ZCodeArchivedTaskDeletionResult,
   ZCodeModelTrajectory,
