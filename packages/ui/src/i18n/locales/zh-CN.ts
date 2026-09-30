@@ -1993,6 +1993,11 @@ const zhCN: Record<string, string> = {
   "settings.uiFontSizeDescription": "调整应用界面的文字大小，图标和布局尺寸不受影响。",
   "settings.systemTitle": "常规",
   "settings.guideNew.title": "引导(新)",
+  "settings.guideNew.heroTitle": "一键搭建工作区",
+  "settings.guideNew.heroDescription":
+    "选择前端与后端的项目文件夹，保存后自动加入工作区，多仓库协作不再逐个打开。",
+  "settings.guideNew.close": "关闭",
+  "settings.guideNew.cancel": "取消",
   "settings.guideNew.description":
     "为前端代码与后端代码分别选择一个或多个项目文件夹，保存后一键加入工作区「项目」分区并跳转。",
   "settings.guideNew.nameLabel": "名称",

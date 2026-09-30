@@ -19,13 +19,17 @@
 | 引导记录 | `GuideEntryStore`（`packages/services/src/customResources/guideEntryStore.ts`），经 `IGuideEntryService`（通道 `guide-entry`）暴露 | `custom-resources.sqlite` 的 `guide_entries` 表 |
 | 项目 tab / 跳转 | `tabStore`（`addTab`/`ensureWorkspaceTab`）+ `useRootWorkspaceActions.handleAddWorkspaceProjects` | 窗口本地 + `lastWorkspaceSession`（custom-resources KV） |
 
-设置分区始终通过 `ServiceProvider services={localHostServices}` 使用本地 Host 服务——引导记录与文件夹路径都是本机事实，激活远程 workspace 时不得读写远端。
+设置侧栏的「引导(新)」入口属于本机功能；引导记录与文件夹路径都是本机事实（`guideEntryService` 由本窗口 Host 提供），激活远程 workspace 时不得读写远端。
 
 ## 界面结构
 
-- 表单区：名称 Input、备注 Textarea、「前端代码」「后端代码」两张模块卡（文件夹行 + 移除按钮 + 虚线「添加文件夹」按钮 + 计数徽标）、提交按钮。
-- 历史记录区：记录卡（名称/备注/两组路径/创建时间）+「重新添加」「删除」操作。
-- 样式复刻引导页 token：模块卡 `rounded-xl border p-5`（未选 `border-card-border bg-card hover:bg-surface-hover`）；文件夹行 `rounded-lg p-3 hover:bg-surface-hover/50`；主按钮 `h-11 rounded-xl px-5`；标题 `text-ui-xl font-semibold`；辅助文案 `text-foreground-subtle`；错误 `text-destructive` + `role="alert"`。
+复刻既有引导页（`OccupationOnboarding`）的**布局与交互形式**，复用同一组件承载：
+
+- **入口**：设置侧栏底部、既有「引导」虚线入口正下方的并列虚线按钮「引导(新)」（Compass 图标），点击置 store 的 `guideNewOnboardingOpen`。
+- **覆盖层**：`OccupationOnboarding` 增加引导(新)流程分支——与首启引导共用同一全屏框架（顶部拖拽区/自绘窗控、`grid lg:grid-cols-2` 双栏）、`OnboardingHeader`（`progressKeys=null` 隐藏三段进度条，仅保留关闭按钮，Esc 同效）与 `OccupationOnboardingVisual` 视觉栏（传入专属 hero 文案 key）。左栏为可滚动表单（`max-w-lg` 居中），右栏为视觉 aside。
+- **左栏内容**（`GuideNewPanel`）：标题/描述 + 名称 Input + 备注 Textarea + 「前端代码」「后端代码」两张模块卡（文件夹行 + 移除按钮 + 虚线「添加文件夹」按钮 + 计数徽标）+ 取消（link 按钮）/提交（`h-11 flex-1 rounded-xl px-5`，校验未通过禁用）页脚；下方为历史记录列表。
+- **卡片样式**沿用引导页 token：`rounded-xl border p-5`（`border-card-border bg-card hover:bg-surface-hover`）；文件夹行 `rounded-lg p-3 hover:bg-surface-hover/50`；标题 `text-ui-xl font-semibold`；辅助文案 `text-foreground-subtle`；错误 `text-destructive` + `role="alert"`。
+- 提交/重新添加成功后自动关闭覆盖层，让出主界面给被激活的项目。
 
 ## 验收场景
 

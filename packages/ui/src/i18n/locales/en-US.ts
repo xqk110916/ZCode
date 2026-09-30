@@ -2123,6 +2123,11 @@ const enUS: Record<string, string> = {
     "Adjust interface text without changing icons or layout dimensions.",
   "settings.systemTitle": "General",
   "settings.guideNew.title": "Onboarding (New)",
+  "settings.guideNew.heroTitle": "Set up your workspace in one go",
+  "settings.guideNew.heroDescription":
+    "Pick frontend and backend project folders, save, and they join the workspace automatically — no more opening repos one by one.",
+  "settings.guideNew.close": "Close",
+  "settings.guideNew.cancel": "Cancel",
   "settings.guideNew.description":
     "Pick one or more project folders for frontend and backend code, then add them all to the workspace Projects section in one click.",
   "settings.guideNew.nameLabel": "Name",

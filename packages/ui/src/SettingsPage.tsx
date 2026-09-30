@@ -1,5 +1,5 @@
 /* oxlint-disable eslint(max-lines) */
-import { ArrowLeft, Rocket, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Compass, Rocket, type LucideIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -55,7 +55,6 @@ import {
 } from "@/lib/accountProviderAccess.js";
 import { buildUsageEntitlementCacheKey } from "@/lib/usageEntitlementCache.js";
 import { ModelProviderSection } from "@/settings/ModelProviderSection.js";
-import { GuideSection } from "@/settings/GuideSection.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 import { useEnterpriseCodingPlanProducts } from "@/settings/model-provider-section/useEnterpriseCodingPlanProducts.js";
 import { UsageStatsSection, type UsageStatsSectionTab } from "@/settings/UsageStatsSection.js";
@@ -277,7 +276,6 @@ export function SettingsPage({
   onBack,
   onCreateTask,
   onOpenWorkspace,
-  onAddWorkspaceProjects,
   allowOpenWorkspace = true,
   onLogin,
   onLogout,
@@ -291,7 +289,6 @@ export function SettingsPage({
   onBack?: () => void;
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onOpenWorkspace?: () => void;
-  onAddWorkspaceProjects?: (paths: string[]) => void;
   allowOpenWorkspace?: boolean;
   onLogin?: () => void;
   onLogout?: () => void;
@@ -339,6 +336,9 @@ export function SettingsPage({
     readonly SettingsBreadcrumbItem[]
   >([]);
   const interfaceMode = useZCodeStore((state) => state.interfaceMode);
+  const setGuideNewOnboardingOpen = useZCodeStore(
+    (state) => state.setGuideNewOnboardingOpen,
+  );
   const setInterfaceMode = useZCodeStore((state) => state.setInterfaceMode);
   const theme = useZCodeStore((state) => state.theme);
   const setTheme = useZCodeStore((state) => state.setTheme);
@@ -1530,6 +1530,29 @@ export function SettingsPage({
                     {intl.formatMessage({ id: "settings.onboarding" })}
                   </span>
                 </SettingsSidebarButton>
+                {/* 引导(新)：与「引导」并列的虚线入口，打开复用引导页覆盖层的项目引导流程
+                    （specs/ui/settings-guide-new.md）。 */}
+                <SettingsSidebarButton
+                  icon={Compass}
+                  label={intl.formatMessage({ id: "settings.guideNew.title" })}
+                  className="mt-2 border border-dashed border-border hover:border-border-hover"
+                  onClick={() => {
+                    runUserAction({
+                      input: {
+                        featureId: "settings.navigation",
+                        action: "open_guide_new",
+                        trigger: "button",
+                      },
+                      operation: () => setGuideNewOnboardingOpen(true),
+                      completed: { resultSource: "local_commit" },
+                      failureStage: "dialog_open",
+                    });
+                  }}
+                >
+                  <span className="text-ui-base text-foreground">
+                    {intl.formatMessage({ id: "settings.guideNew.title" })}
+                  </span>
+                </SettingsSidebarButton>
               </nav>
 
               <div className="max-lg:hidden">
@@ -1784,11 +1807,6 @@ export function SettingsPage({
                               })
                             }
                           />
-                        ) : activeSection === "guideNew" ? (
-                          <ServiceProvider services={localHostServices}>
-                            {/* 引导记录与文件夹路径是本机事实源；激活远端 workspace 时也不能注入远端 Host。 */}
-                            <GuideSection onAddWorkspaceProjects={onAddWorkspaceProjects} />
-                          </ServiceProvider>
                         ) : activeSection === "appearance" ? (
                           <AppearanceSectionContent
                             codePreviewSettings={codePreviewSettings}

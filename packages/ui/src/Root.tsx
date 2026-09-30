@@ -959,7 +959,6 @@ function RootInner({
     onBack: activeWorkspacePath ? handleBackFromSettings : undefined,
     onCreateTask: handleCreateTask,
     onOpenWorkspace: handleOpenWorkspace,
-    onAddWorkspaceProjects: handleAddWorkspaceProjects,
     allowOpenWorkspace,
     onLogin: !user ? handleOpenLoginEntry : undefined,
     onLogout: user ? handleLogout : undefined,
@@ -1019,6 +1018,7 @@ function RootInner({
         showChildrenWhileLoading={!workspaceShellPath && isSettingsTabActive}
         isMacDesktop={isMacDesktop}
         isWindowsDesktop={isWindowsDesktop}
+        onAddWorkspaceProjects={handleAddWorkspaceProjects}
       >
         {/* 新引导属于应用级偏好；无项目时也要挂载，才能响应设置页的手动打开请求。 */}
         {!workspaceShellPath ? (

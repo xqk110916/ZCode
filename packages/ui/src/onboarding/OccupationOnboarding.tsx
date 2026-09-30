@@ -1,9 +1,12 @@
+/* eslint-disable max-lines -- 同一覆盖层承载两个引导流程（首启偏好 + 设置「引导(新)」项目引导），
+   共享框架与视觉栏；流程稳定后再按职责拆分。 */
 import { useOnboardingTelemetry } from "@/onboarding/useOnboardingTelemetry.js";
 import { OnboardingHeader } from "@/onboarding/OnboardingHeader.js";
 import { OccupationOnboardingVisual } from "@/onboarding/OccupationOnboardingVisual.js";
 import { occupations, type OccupationValue } from "@/onboarding/occupationOptions.js";
 import { OnboardingModeSelector } from "@/onboarding/OnboardingModeSelector.js";
 import { OnboardingOccupationGrid } from "@/onboarding/OnboardingOccupationGrid.js";
+import { GuideNewPanel } from "@/onboarding/GuideNewPanel.js";
 import { useOnboardingTrigger } from "@/onboarding/useOnboardingTrigger.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSettings } from "@/hooks/useSettingService.js";
@@ -38,6 +41,7 @@ export function OccupationOnboarding({
   showChildrenWhileLoading = false,
   isMacDesktop,
   isWindowsDesktop,
+  onAddWorkspaceProjects,
 }: {
   children: ReactNode;
   /** Windows/Linux 自绘窗控：引导全屏覆盖主界面（含标题栏），需在此补最小化/最大化/关闭。 */
@@ -46,6 +50,8 @@ export function OccupationOnboarding({
   showChildrenWhileLoading?: boolean;
   isMacDesktop?: boolean;
   isWindowsDesktop?: boolean;
+  /** 设置「引导(新)」流程提交：批量把文件夹加入工作区项目并跳转（specs/ui/settings-guide-new.md）。 */
+  onAddWorkspaceProjects?: (paths: string[]) => void;
 }) {
   const { settings, update } = useSettings();
   const platform = usePlatform();
@@ -53,6 +59,9 @@ export function OccupationOnboarding({
   const shortcutBindings = useEffectiveShortcutBindings();
   const requested = useZCodeStore((state) => state.newUserOnboardingOpen);
   const setRequested = useZCodeStore((state) => state.setNewUserOnboardingOpen);
+  // 设置「引导(新)」复用本覆盖层框架：store 开关独立于首启引导触发判定。
+  const guideNewOpen = useZCodeStore((state) => state.guideNewOnboardingOpen);
+  const setGuideNewOpen = useZCodeStore((state) => state.setGuideNewOnboardingOpen);
   // 登录态变化（useRootOAuthEffects 登录成功后 setUser）时按 userId 重新判定是否触发引导。
   const userId = useZCodeStore((state) => state.user?.id) ?? null;
   const { intl } = useZCodeIntl();
@@ -126,6 +135,13 @@ export function OccupationOnboarding({
         }
         return;
       }
+      if (event.key === "Escape" && guideNewOpen) {
+        // 引导(新)直接退出：不写首启引导的 dismissed 决策，也不触碰偏好记录。
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setGuideNewOpen(false);
+        return;
+      }
       if (event.key === "Escape" && onboardingVisible && !saving) {
         // 直接退出不改偏好；首次引导会持久化 dismissed，避免下次启动重复展示。
         event.preventDefault();
@@ -133,6 +149,8 @@ export function OccupationOnboarding({
         closeOnboarding();
         return;
       }
+      // 引导(新)打开期间不响应首启引导快捷键，避免旧引导叠在新流程之上。
+      if (guideNewOpen) return;
       if (
         !shortcutBindings.openOnboarding.some((binding) => matchesShortcutBinding(event, binding))
       )
@@ -153,6 +171,8 @@ export function OccupationOnboarding({
     closeOnboarding,
     shortcutBindings,
     setRequested,
+    setGuideNewOpen,
+    guideNewOpen,
     onboardingVisible,
     saving,
     savedInterfaceMode,
@@ -211,6 +231,55 @@ export function OccupationOnboarding({
     applyLatestEntry();
     // eslint-disable-line react-hooks/exhaustive-deps
   }, [latestEntry]);
+  // 设置「引导(新)」：复用同一覆盖层框架（拖拽区/窗控/双栏布局/视觉栏）渲染项目引导表单；
+  // 不依赖 settings 加载，也不走首启引导的记录/遥测链路，直接关闭即可。
+  if (guideNewOpen) {
+    const guideT = (key: string) =>
+      intl.formatMessage({
+        id: key === "close" ? "settings.guideNew.close" : `occupationOnboarding.${key}`,
+      });
+    return (
+      <main
+        aria-label={intl.formatMessage({ id: "settings.guideNew.title" })}
+        data-testid="guide-new-onboarding"
+        className="relative flex h-dvh w-full min-h-0 flex-col overflow-hidden bg-background text-foreground"
+      >
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-12 [app-region:drag]" />
+        {showWindowControls ? (
+          <div className="absolute right-1 top-1 z-30 mt-px mr-px flex h-12 items-center px-2">
+            <DesktopWindowControls />
+          </div>
+        ) : null}
+        <div className="relative grid min-h-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-2 lg:gap-1 lg:p-1">
+          <div className="flex min-h-0 flex-col pt-12 [@media(max-height:740px)]:pt-10">
+            <OnboardingHeader
+              step={0}
+              saving={false}
+              progressKeys={null}
+              t={guideT}
+              onBack={() => setGuideNewOpen(false)}
+              onClose={() => setGuideNewOpen(false)}
+            />
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-4 sm:px-10">
+              {/* 自动外边距让短内容居中，长内容从顶部正常滚动，不影响固定导航。 */}
+              <div className="mx-auto my-auto w-full max-w-lg shrink-0">
+                <GuideNewPanel
+                  onAddWorkspaceProjects={onAddWorkspaceProjects}
+                  onClose={() => setGuideNewOpen(false)}
+                />
+              </div>
+            </div>
+          </div>
+          <OccupationOnboardingVisual
+            isMacDesktop={isMacDesktop}
+            isWindowsDesktop={isWindowsDesktop}
+            heroTitleId="settings.guideNew.heroTitle"
+            heroDescriptionId="settings.guideNew.heroDescription"
+          />
+        </div>
+      </main>
+    );
+  }
   if (!settings) return showChildrenWhileLoading ? <>{children}</> : null;
   // 判定进行中先不渲染，避免引导闪现后立即消失（判定为需引导）或先闪引导再进主界面。
   // 只有疑似首跑（settings 里也没有职业）才等待记录判定；存量用户（已有

@@ -5,25 +5,27 @@ import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import { Label } from "@/components/ui/label.js";
+import { Textarea } from "@/components/ui/textarea.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
-import { SettingsFormTextarea } from "@/settings/SettingsFormTextarea.js";
 
 type GuideModuleKey = "frontend" | "backend";
 
-interface GuideSectionProps {
-  /** 提交/重新添加后批量加入工作区项目并跳转（specs/ui/settings-guide-new.md）。 */
-  onAddWorkspaceProjects?: (paths: string[]) => void;
-}
-
 /**
- * 设置「引导(新)」分区：为前端/后端代码各选择一个或多个项目文件夹，
- * 连同名称/备注保存为引导记录后批量加入工作区「项目」分区。
- * 交互与样式复刻首启引导页（OccupationOnboarding）的卡片 token。
+ * 设置「引导(新)」的引导页内容（specs/ui/settings-guide-new.md）。
+ * 复用 OccupationOnboarding 的左栏容器（标题/滚动/页脚按钮节奏），本组件只负责
+ * 表单与历史记录内容：前端/后端各选一个或多个文件夹 + 名称(必填)/备注(选填)，
+ * 提交后经 onAddWorkspaceProjects 批量加入工作区「项目」并跳转，随后关闭引导层。
  */
-export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
+export function GuideNewPanel({
+  onAddWorkspaceProjects,
+  onClose,
+}: {
+  onAddWorkspaceProjects?: (paths: string[]) => void;
+  onClose: () => void;
+}) {
   const { intl, localePreference } = useZCodeIntl();
   const services = useServices();
   const platform = useOptionalPlatform();
@@ -51,7 +53,7 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
     try {
       setEntries(await guideEntryService.list());
     } catch (cause) {
-      logger.warn("[settings-guide-new] 读取引导记录失败", { error: String(cause) });
+      logger.warn("[guide-new] 读取引导记录失败", { error: String(cause) });
     } finally {
       setEntriesLoaded(true);
     }
@@ -61,7 +63,6 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
     void refreshEntries();
   }, [refreshEntries]);
 
-  const canSelectDirectory = Boolean(platform);
   const canSubmit =
     !submitting &&
     Boolean(guideEntryService) &&
@@ -98,15 +99,11 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
     setError(null);
     try {
       await guideEntryService.create({ name, remark, frontendPaths, backendPaths });
-      // 添加并跳转：前端在前、后端在后，激活第一个项目。
+      // 添加并跳转：前端在前、后端在后，激活第一个项目；随后关闭引导层让出主界面。
       onAddWorkspaceProjects?.([...frontendPaths, ...backendPaths]);
-      setName("");
-      setRemark("");
-      setFrontendPaths([]);
-      setBackendPaths([]);
-      await refreshEntries();
+      onClose();
     } catch (cause) {
-      logger.error("[settings-guide-new] 保存引导记录失败", { error: String(cause) });
+      logger.error("[guide-new] 保存引导记录失败", { error: String(cause) });
       setError(t("submitError"));
     } finally {
       setSubmitting(false);
@@ -118,7 +115,7 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
     guideEntryService,
     name,
     onAddWorkspaceProjects,
-    refreshEntries,
+    onClose,
     remark,
     t,
   ]);
@@ -126,8 +123,9 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
   const handleReAdd = useCallback(
     (entry: ZCodeGuideEntry) => {
       onAddWorkspaceProjects?.([...entry.frontendPaths, ...entry.backendPaths]);
+      onClose();
     },
-    [onAddWorkspaceProjects],
+    [onAddWorkspaceProjects, onClose],
   );
 
   const handleDelete = useCallback(
@@ -137,49 +135,50 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
         setPendingDeleteId(null);
         await refreshEntries();
       } catch (cause) {
-        logger.error("[settings-guide-new] 删除引导记录失败", { error: String(cause) });
+        logger.error("[guide-new] 删除引导记录失败", { error: String(cause) });
       }
     },
     [guideEntryService, refreshEntries],
   );
 
   return (
-    <div className="flex flex-col gap-6" data-testid="settings-guide-new-section">
-      <p className="text-ui-base leading-relaxed text-foreground-subtle">{t("description")}</p>
+    <section className="flex w-full flex-col">
+      <div className="w-full">
+        <h1 className="text-ui-xl font-semibold tracking-tight text-center">{t("title")}</h1>
+        <p className="mx-auto mt-3 max-w-md text-center text-ui-base leading-relaxed text-foreground-subtle">
+          {t("description")}
+        </p>
 
-      <section className="flex flex-col gap-5 rounded-xl border border-card-border bg-card p-5">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="guide-new-name" className="text-ui-base font-medium">
-            {t("nameLabel")} <span className="text-destructive">*</span>
-          </Label>
-          <Input
-            id="guide-new-name"
-            value={name}
-            placeholder={t("namePlaceholder")}
-            onChange={(event) => setName(event.target.value)}
-            className="h-9 rounded-lg text-ui-base"
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="guide-new-remark" className="text-ui-base font-medium">
-            {t("remarkLabel")}
-          </Label>
-          <SettingsFormTextarea
-            id="guide-new-remark"
-            value={remark}
-            rows={2}
-            placeholder={t("remarkPlaceholder")}
-            onChange={(event) => setRemark(event.target.value)}
-            className="min-h-0 resize-none"
-          />
-        </div>
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="mt-8 space-y-3">
+          <div className="grid cursor-pointer grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 rounded-xl border border-card-border bg-card p-5 transition-colors hover:bg-surface-hover dark:bg-surface/40">
+            <Label htmlFor="guide-new-name" className="text-ui-base font-medium">
+              {t("nameLabel")}
+            </Label>
+            <Input
+              id="guide-new-name"
+              value={name}
+              placeholder={t("namePlaceholder")}
+              onChange={(event) => setName(event.target.value)}
+              className="col-start-2 h-9 rounded-lg text-ui-base"
+            />
+            <Label htmlFor="guide-new-remark" className="text-ui-base font-medium">
+              {t("remarkLabel")}
+            </Label>
+            <Textarea
+              id="guide-new-remark"
+              value={remark}
+              rows={2}
+              placeholder={t("remarkPlaceholder")}
+              onChange={(event) => setRemark(event.target.value)}
+              className="col-start-2 min-h-0 resize-none rounded-lg border border-input-border bg-input px-2 py-2 text-ui-base shadow-none placeholder:text-foreground-subtlest hover:border-input-border-hover focus-visible:border-input-border-focused focus-visible:bg-input-focused focus-visible:ring-0"
+            />
+          </div>
           <GuideModuleCard
             icon={<MonitorSmartphone className="size-4 shrink-0" aria-hidden />}
             label={t("frontendLabel")}
             description={t("frontendDescription")}
             paths={frontendPaths}
-            addDisabled={!canSelectDirectory || submitting}
+            addDisabled={!platform || submitting}
             onAdd={() => void handleAddFolder("frontend")}
             onRemove={(path) => handleRemovePath("frontend", path)}
             emptyHint={t("frontendEmptyHint")}
@@ -192,7 +191,7 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
             label={t("backendLabel")}
             description={t("backendDescription")}
             paths={backendPaths}
-            addDisabled={!canSelectDirectory || submitting}
+            addDisabled={!platform || submitting}
             onAdd={() => void handleAddFolder("backend")}
             onRemove={(path) => handleRemovePath("backend", path)}
             emptyHint={t("backendEmptyHint")}
@@ -202,15 +201,25 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
           />
         </div>
         {error ? (
-          <p role="alert" className="text-ui-sm text-destructive">
-            {error}
+          <p role="alert" className="mt-4 text-ui-sm text-destructive">
+            {t("submitError")}
           </p>
         ) : null}
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-ui-sm text-foreground-subtle">{t("submitHint")}</p>
+      </div>
+
+      <footer className="mt-6 flex flex-col gap-3 [@media(max-height:740px)]:mt-4 [@media(max-height:740px)]:gap-1">
+        <Button
+          variant="link"
+          disabled={submitting}
+          className="order-2 h-9 self-center rounded-xl px-3 text-ui-base text-foreground-subtle"
+          onClick={onClose}
+        >
+          {t("cancel")}
+        </Button>
+        <div className="flex w-full gap-3">
           <Button
             disabled={!canSubmit}
-            className="h-11 shrink-0 rounded-xl px-5 text-ui-base"
+            className="h-11 flex-1 rounded-xl px-5 text-ui-base"
             onClick={() => void handleSubmit()}
           >
             {submitting ? (
@@ -223,9 +232,9 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
             )}
           </Button>
         </div>
-      </section>
+      </footer>
 
-      <section className="flex flex-col gap-3">
+      <section className="mt-8 flex flex-col gap-3 border-t border-border pt-6">
         <h2 className="flex items-center gap-2 text-ui-base font-semibold">
           <History className="size-4 shrink-0 text-foreground-subtle" aria-hidden />
           {t("historyTitle")}
@@ -236,15 +245,15 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
             {t("historyLoading")}
           </div>
         ) : entries.length === 0 ? (
-          <p className="rounded-xl border border-card-border bg-card p-5 text-ui-sm text-foreground-subtle">
+          <p className="rounded-xl border border-card-border bg-card p-4 text-ui-sm text-foreground-subtle">
             {t("historyEmpty")}
           </p>
         ) : (
-          <ul className="flex flex-col gap-3">
+          <ul className="flex flex-col gap-2">
             {entries.map((entry) => (
               <li
                 key={entry.id}
-                className="flex flex-col gap-3 rounded-xl border border-card-border bg-card p-5 transition-colors hover:bg-surface-hover/50"
+                className="flex flex-col gap-2 rounded-xl border border-card-border bg-card p-4 transition-colors hover:bg-surface-hover/50"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-ui-base font-medium">{entry.name}</span>
@@ -258,11 +267,16 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
                   <p className="text-ui-sm text-foreground-subtle">{entry.remark}</p>
                 ) : null}
                 <div className="flex flex-col gap-1 text-ui-sm">
-                  <GuideEntryPathGroup
-                    label={t("frontendLabel")}
-                    paths={entry.frontendPaths}
-                  />
-                  <GuideEntryPathGroup label={t("backendLabel")} paths={entry.backendPaths} />
+                  {entry.frontendPaths.length > 0 ? (
+                    <p className="text-foreground-subtle" title={entry.frontendPaths.join("\n")}>
+                      {t("frontendLabel")}：{entry.frontendPaths.join("、")}
+                    </p>
+                  ) : null}
+                  {entry.backendPaths.length > 0 ? (
+                    <p className="text-foreground-subtle" title={entry.backendPaths.join("\n")}>
+                      {t("backendLabel")}：{entry.backendPaths.join("、")}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
@@ -275,7 +289,9 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
                   </Button>
                   {pendingDeleteId === entry.id ? (
                     <>
-                      <span className="text-ui-sm text-foreground-subtle">{t("deleteConfirm")}</span>
+                      <span className="text-ui-sm text-foreground-subtle">
+                        {t("deleteConfirm")}
+                      </span>
                       <Button
                         variant="destructive"
                         className="h-8 rounded-lg px-3 text-ui-sm"
@@ -308,7 +324,7 @@ export function GuideSection({ onAddWorkspaceProjects }: GuideSectionProps) {
           </ul>
         )}
       </section>
-    </div>
+    </section>
   );
 }
 
@@ -338,7 +354,8 @@ function GuideModuleCard({
   requiredLabel: string;
 }) {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-card-border bg-card p-5 transition-colors hover:bg-surface-hover/50">
+    // 卡片容器沿用引导页选项卡 token：rounded-xl border p-5 + hover:bg-surface-hover。
+    <div className="rounded-xl border border-card-border bg-card p-5 transition-colors hover:bg-surface-hover dark:bg-surface/40">
       <div className="flex items-center gap-2">
         <span className="text-foreground-subtle">{icon}</span>
         <span className="text-ui-base font-medium">{label}</span>
@@ -347,9 +364,9 @@ function GuideModuleCard({
           {paths.length}
         </Badge>
       </div>
-      <p className="text-ui-sm text-foreground-subtle">{description}</p>
+      <p className="mt-1 text-ui-sm font-normal text-foreground-subtle">{description}</p>
       {paths.length > 0 ? (
-        <ul className="flex flex-col gap-1 rounded-xl border border-border bg-background p-1">
+        <ul className="mt-3 flex flex-col gap-1">
           {paths.map((path) => (
             <li
               key={path}
@@ -371,28 +388,17 @@ function GuideModuleCard({
           ))}
         </ul>
       ) : (
-        <p className="rounded-lg p-3 text-ui-sm text-foreground-subtle">{emptyHint}</p>
+        <p className="mt-3 rounded-lg p-3 text-ui-sm text-foreground-subtle">{emptyHint}</p>
       )}
       <Button
         variant="outline"
         disabled={addDisabled}
-        className="h-9 w-full rounded-lg border-dashed text-ui-sm"
+        className="mt-3 h-9 w-full rounded-lg border-dashed text-ui-sm"
         onClick={onAdd}
       >
         <FolderPlus className="size-4" aria-hidden />
         {addLabel}
       </Button>
     </div>
-  );
-}
-
-function GuideEntryPathGroup({ label, paths }: { label: string; paths: string[] }) {
-  if (paths.length === 0) {
-    return null;
-  }
-  return (
-    <p className="text-ui-sm text-foreground-subtle" title={paths.join("\n")}>
-      {label}：{paths.join("、")}
-    </p>
   );
 }

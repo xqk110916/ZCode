@@ -12,9 +12,14 @@ import "@/onboarding/onboardingLogoSweep.css";
 export function OccupationOnboardingVisual({
   isMacDesktop,
   isWindowsDesktop,
+  heroTitleId = "occupationOnboarding.heroTitle",
+  heroDescriptionId = "occupationOnboarding.heroDescription",
 }: {
   isMacDesktop?: boolean;
   isWindowsDesktop?: boolean;
+  /** 覆盖层复用视觉栏时替换 hero 文案（如设置「引导(新)」）。 */
+  heroTitleId?: string;
+  heroDescriptionId?: string;
 }) {
   const platform = usePlatform();
   const [macOSMajorVersion, setMacOSMajorVersion] = useState<number | null>(null);
@@ -62,7 +67,7 @@ export function OccupationOnboardingVisual({
             palette.heading,
           )}
         >
-          {intl.formatMessage({ id: "occupationOnboarding.heroTitle" })}
+          {intl.formatMessage({ id: heroTitleId })}
         </h2>
         <p
           className={cn(
@@ -71,7 +76,7 @@ export function OccupationOnboardingVisual({
             "dark:text-slate-200",
           )}
         >
-          {intl.formatMessage({ id: "occupationOnboarding.heroDescription" })}
+          {intl.formatMessage({ id: heroDescriptionId })}
         </p>
       </div>
     </aside>
