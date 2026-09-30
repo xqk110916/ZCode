@@ -42,6 +42,7 @@ export function OccupationOnboarding({
   isMacDesktop,
   isWindowsDesktop,
   onAddWorkspaceProjects,
+  preferDirectoryBrowser = false,
 }: {
   children: ReactNode;
   /** Windows/Linux 自绘窗控：引导全屏覆盖主界面（含标题栏），需在此补最小化/最大化/关闭。 */
@@ -52,6 +53,8 @@ export function OccupationOnboarding({
   isWindowsDesktop?: boolean;
   /** 设置「引导(新)」流程提交：批量把文件夹加入工作区项目并跳转（specs/ui/settings-guide-new.md）。 */
   onAddWorkspaceProjects?: (paths: string[]) => void;
+  /** Web/远程端没有系统目录选择框；引导(新)选文件夹改用服务端目录浏览器。 */
+  preferDirectoryBrowser?: boolean;
 }) {
   const { settings, update } = useSettings();
   const platform = usePlatform();
@@ -266,6 +269,7 @@ export function OccupationOnboarding({
                 <GuideNewPanel
                   onAddWorkspaceProjects={onAddWorkspaceProjects}
                   onClose={() => setGuideNewOpen(false)}
+                  preferDirectoryBrowser={preferDirectoryBrowser}
                 />
               </div>
             </div>

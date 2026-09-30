@@ -1,3 +1,5 @@
+/* eslint-disable max-lines -- 表单（名称/备注/双模块文件夹卡）与历史记录列表集中在引导(新)内容件里，
+   与 GuideModuleCard 共享模块卡上下文；拆分收益低，先保持单一内容件收口。 */
 import { useCallback, useEffect, useState } from "react";
 import { Check, FolderPlus, History, Loader2, MonitorSmartphone, Server, X } from "lucide-react";
 import type { ZCodeGuideEntry } from "@zcode/services";
@@ -6,6 +8,7 @@ import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import { Label } from "@/components/ui/label.js";
 import { Textarea } from "@/components/ui/textarea.js";
+import { DirectoryBrowser } from "@/DirectoryBrowser.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -18,13 +21,17 @@ type GuideModuleKey = "frontend" | "backend";
  * 复用 OccupationOnboarding 的左栏容器（标题/滚动/页脚按钮节奏），本组件只负责
  * 表单与历史记录内容：前端/后端各选一个或多个文件夹 + 名称(必填)/备注(选填)，
  * 提交后经 onAddWorkspaceProjects 批量加入工作区「项目」并跳转，随后关闭引导层。
+ * 文件夹选择与「打开工作区」同口径：桌面端走系统目录框；Web/远程端
+ * （preferDirectoryBrowser）或系统对话框异常时退回服务端目录浏览器 DirectoryBrowser。
  */
 export function GuideNewPanel({
   onAddWorkspaceProjects,
   onClose,
+  preferDirectoryBrowser = false,
 }: {
   onAddWorkspaceProjects?: (paths: string[]) => void;
   onClose: () => void;
+  preferDirectoryBrowser?: boolean;
 }) {
   const { intl, localePreference } = useZCodeIntl();
   const services = useServices();
@@ -38,6 +45,10 @@ export function GuideNewPanel({
   const [entries, setEntries] = useState<ZCodeGuideEntry[]>([]);
   const [entriesLoaded, setEntriesLoaded] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  // 服务端目录浏览器当前服务的模块（null = 关闭）。
+  const [directoryBrowserTarget, setDirectoryBrowserTarget] = useState<GuideModuleKey | null>(
+    null,
+  );
 
   const guideEntryService = services.guideEntryService;
   const t = useCallback(
@@ -70,18 +81,42 @@ export function GuideNewPanel({
     frontendPaths.length > 0 &&
     backendPaths.length > 0;
 
-  const handleAddFolder = useCallback(async (moduleKey: GuideModuleKey) => {
-    const selected = await platform?.selectDirectory();
-    // 取消目录选择框：表单保持不变。
-    if (!selected) {
+  const appendPath = useCallback((moduleKey: GuideModuleKey, path: string) => {
+    const trimmed = path.trim();
+    if (!trimmed) {
       return;
     }
     if (moduleKey === "frontend") {
-      setFrontendPaths((prev) => (prev.includes(selected) ? prev : [...prev, selected]));
+      setFrontendPaths((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
     } else {
-      setBackendPaths((prev) => (prev.includes(selected) ? prev : [...prev, selected]));
+      setBackendPaths((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
     }
-  }, [platform]);
+  }, []);
+
+  const handleAddFolder = useCallback(
+    async (moduleKey: GuideModuleKey) => {
+      // Web/server 根节点没有系统目录选择框（与 openWorkspaceFolderEntry 同口径）：
+      // preferDirectoryBrowser 时直接打开服务端目录浏览器，确保选到目标 host 上的路径。
+      if (preferDirectoryBrowser) {
+        setDirectoryBrowserTarget(moduleKey);
+        return;
+      }
+      try {
+        const selected = await platform?.selectDirectory();
+        // 取消目录选择框：表单保持不变。
+        if (selected) {
+          appendPath(moduleKey, selected);
+        }
+      } catch (cause) {
+        // 系统对话框在部分嵌入环境（受限 preload）会抛 IPC 异常；退回目录浏览器而不是留下未处理 Promise。
+        logger.error("[guide-new] 系统目录选择框调用失败，退回服务端目录浏览器", {
+          error: String(cause),
+        });
+        setDirectoryBrowserTarget(moduleKey);
+      }
+    },
+    [appendPath, platform, preferDirectoryBrowser],
+  );
 
   const handleRemovePath = useCallback((moduleKey: GuideModuleKey, path: string) => {
     if (moduleKey === "frontend") {
@@ -142,6 +177,7 @@ export function GuideNewPanel({
   );
 
   return (
+    <>
     <section className="flex w-full flex-col">
       <div className="w-full">
         <h1 className="text-ui-xl font-semibold tracking-tight text-center">{t("title")}</h1>
@@ -178,7 +214,7 @@ export function GuideNewPanel({
             label={t("frontendLabel")}
             description={t("frontendDescription")}
             paths={frontendPaths}
-            addDisabled={!platform || submitting}
+            addDisabled={submitting || (!platform && !preferDirectoryBrowser)}
             onAdd={() => void handleAddFolder("frontend")}
             onRemove={(path) => handleRemovePath("frontend", path)}
             emptyHint={t("frontendEmptyHint")}
@@ -191,7 +227,7 @@ export function GuideNewPanel({
             label={t("backendLabel")}
             description={t("backendDescription")}
             paths={backendPaths}
-            addDisabled={!platform || submitting}
+            addDisabled={submitting || (!platform && !preferDirectoryBrowser)}
             onAdd={() => void handleAddFolder("backend")}
             onRemove={(path) => handleRemovePath("backend", path)}
             emptyHint={t("backendEmptyHint")}
@@ -325,6 +361,17 @@ export function GuideNewPanel({
         )}
       </section>
     </section>
+    {directoryBrowserTarget ? (
+      <DirectoryBrowser
+        services={services}
+        onSelect={(path) => {
+          appendPath(directoryBrowserTarget, path);
+          setDirectoryBrowserTarget(null);
+        }}
+        onCancel={() => setDirectoryBrowserTarget(null)}
+      />
+    ) : null}
+    </>
   );
 }
 
