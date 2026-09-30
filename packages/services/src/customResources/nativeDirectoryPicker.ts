@@ -1,11 +1,5 @@
 import { spawn } from "node:child_process";
-
-export interface NativeDirectoryPickResult {
-  /** 服务端是否具备原生选择能力（Windows 且 PowerShell 可用）；false 时调用方走降级。 */
-  supported: boolean;
-  /** 用户选中的绝对路径；取消时为 null（仅在 supported=true 时有意义）。 */
-  path: string | null;
-}
+import type { NativeDirectoryPickResult } from "#src/customResources/guideEntryService.js";
 
 /** PowerShell 单引号字面量转义。 */
 function psQuote(value: string): string {

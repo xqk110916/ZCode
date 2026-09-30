@@ -4,10 +4,13 @@ import type {
   CreateGuideEntryInput,
   ZCodeGuideEntry,
 } from "#src/customResources/guideEntryStore.js";
-import {
-  pickWindowsDirectory,
-  type NativeDirectoryPickResult,
-} from "#src/customResources/nativeDirectoryPicker.js";
+
+export interface NativeDirectoryPickResult {
+  /** 服务端是否具备原生选择能力（Windows 且 PowerShell 可用）；false 时调用方走降级。 */
+  supported: boolean;
+  /** 用户选中的绝对路径；取消时为 null（仅在 supported=true 时有意义）。 */
+  path: string | null;
+}
 
 export type { CreateGuideEntryInput, ZCodeGuideEntry } from "#src/customResources/guideEntryStore.js";
 
@@ -47,11 +50,16 @@ export function createGuideEntryService(
     delete(entryId: string): Promise<void>;
   },
   options: {
-    /** 测试注入；缺省使用 Windows PowerShell 原生 FolderBrowserDialog。 */
+    /**
+     * 原生文件夹选择器实现（Windows FolderBrowserDialog，见 nativeDirectoryPicker.ts）。
+     * 本模块会被浏览器包（描述符）引用，不能静态 import Node 依赖；由 server 组合根
+     * （node.ts）注入。缺省返回不支持，UI 据此降级到服务端目录浏览器。
+     */
     pickNativeDirectory?: (description: string) => Promise<NativeDirectoryPickResult>;
   } = {},
 ): IGuideEntryService {
-  const pickNativeDirectory = options.pickNativeDirectory ?? pickWindowsDirectory;
+  const pickNativeDirectory: (description: string) => Promise<NativeDirectoryPickResult> =
+    options.pickNativeDirectory ?? (async () => ({ supported: false, path: null }));
   return {
     async list() {
       return store.list();
