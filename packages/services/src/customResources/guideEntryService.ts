@@ -4,6 +4,10 @@ import type {
   CreateGuideEntryInput,
   ZCodeGuideEntry,
 } from "#src/customResources/guideEntryStore.js";
+import {
+  pickWindowsDirectory,
+  type NativeDirectoryPickResult,
+} from "#src/customResources/nativeDirectoryPicker.js";
 
 export type { CreateGuideEntryInput, ZCodeGuideEntry } from "#src/customResources/guideEntryStore.js";
 
@@ -23,17 +27,31 @@ export interface IGuideEntryService {
 
   /** 删除引导记录（幂等；不影响已添加的工作区项目 tab）。 */
   delete(params: { entryId: string }): Promise<void>;
+
+  /**
+   * 在 server（Windows）桌面弹出系统原生文件夹选择器并回传选中路径。
+   * Web 客户端自身无法打开系统目录框，server 与用户同机开发时由本方法代弹；
+   * supported=false（非 Windows / 能力缺失）时调用方降级到服务端目录浏览器。
+   */
+  pickDirectory(params?: { description?: string }): Promise<NativeDirectoryPickResult>;
 }
 
 export const IGuideEntryService = createServiceDescriptor<IGuideEntryService>(
   ServiceChannels.GuideEntry,
 );
 
-export function createGuideEntryService(store: {
-  list(): Promise<ZCodeGuideEntry[]>;
-  create(input: CreateGuideEntryInput): Promise<ZCodeGuideEntry>;
-  delete(entryId: string): Promise<void>;
-}): IGuideEntryService {
+export function createGuideEntryService(
+  store: {
+    list(): Promise<ZCodeGuideEntry[]>;
+    create(input: CreateGuideEntryInput): Promise<ZCodeGuideEntry>;
+    delete(entryId: string): Promise<void>;
+  },
+  options: {
+    /** 测试注入；缺省使用 Windows PowerShell 原生 FolderBrowserDialog。 */
+    pickNativeDirectory?: (description: string) => Promise<NativeDirectoryPickResult>;
+  } = {},
+): IGuideEntryService {
+  const pickNativeDirectory = options.pickNativeDirectory ?? pickWindowsDirectory;
   return {
     async list() {
       return store.list();
@@ -63,6 +81,9 @@ export function createGuideEntryService(store: {
     },
     async delete(params) {
       await store.delete(params.entryId);
+    },
+    async pickDirectory(params) {
+      return pickNativeDirectory(params?.description ?? "");
     },
   };
 }

@@ -49,6 +49,8 @@ export function GuideNewPanel({
   const [directoryBrowserTarget, setDirectoryBrowserTarget] = useState<GuideModuleKey | null>(
     null,
   );
+  // server 侧原生选择器弹出期间禁用添加按钮，避免并发多个对话框。
+  const [pickingFolder, setPickingFolder] = useState(false);
 
   const guideEntryService = services.guideEntryService;
   const t = useCallback(
@@ -95,10 +97,36 @@ export function GuideNewPanel({
 
   const handleAddFolder = useCallback(
     async (moduleKey: GuideModuleKey) => {
-      // Web/server 根节点没有系统目录选择框（与 openWorkspaceFolderEntry 同口径）：
-      // preferDirectoryBrowser 时直接打开服务端目录浏览器，确保选到目标 host 上的路径。
       if (preferDirectoryBrowser) {
-        setDirectoryBrowserTarget(moduleKey);
+        // Web 端优先让 server（通常即用户本机 Windows）弹系统原生文件夹选择器，
+        // 选中的即 server 侧工作区真实路径；非 Windows / 能力缺失 / 调用异常时
+        // 降级到服务端目录浏览器（与 openWorkspaceFolderEntry 的降级口径一致）。
+        if (!guideEntryService) {
+          setDirectoryBrowserTarget(moduleKey);
+          return;
+        }
+        setPickingFolder(true);
+        try {
+          const picked = await guideEntryService.pickDirectory({
+            description: t("dialogTitle"),
+          });
+          if (picked.path) {
+            appendPath(moduleKey, picked.path);
+            return;
+          }
+          if (picked.supported) {
+            // 用户在系统对话框点了取消：表单保持不变。
+            return;
+          }
+          setDirectoryBrowserTarget(moduleKey);
+        } catch (cause) {
+          logger.error("[guide-new] 原生文件夹选择器调用失败，退回服务端目录浏览器", {
+            error: String(cause),
+          });
+          setDirectoryBrowserTarget(moduleKey);
+        } finally {
+          setPickingFolder(false);
+        }
         return;
       }
       try {
@@ -115,7 +143,7 @@ export function GuideNewPanel({
         setDirectoryBrowserTarget(moduleKey);
       }
     },
-    [appendPath, platform, preferDirectoryBrowser],
+    [appendPath, guideEntryService, platform, preferDirectoryBrowser, t],
   );
 
   const handleRemovePath = useCallback((moduleKey: GuideModuleKey, path: string) => {
@@ -214,7 +242,7 @@ export function GuideNewPanel({
             label={t("frontendLabel")}
             description={t("frontendDescription")}
             paths={frontendPaths}
-            addDisabled={submitting || (!platform && !preferDirectoryBrowser)}
+            addDisabled={pickingFolder || submitting || (!platform && !preferDirectoryBrowser)}
             onAdd={() => void handleAddFolder("frontend")}
             onRemove={(path) => handleRemovePath("frontend", path)}
             emptyHint={t("frontendEmptyHint")}
@@ -227,7 +255,7 @@ export function GuideNewPanel({
             label={t("backendLabel")}
             description={t("backendDescription")}
             paths={backendPaths}
-            addDisabled={submitting || (!platform && !preferDirectoryBrowser)}
+            addDisabled={pickingFolder || submitting || (!platform && !preferDirectoryBrowser)}
             onAdd={() => void handleAddFolder("backend")}
             onRemove={(path) => handleRemovePath("backend", path)}
             emptyHint={t("backendEmptyHint")}

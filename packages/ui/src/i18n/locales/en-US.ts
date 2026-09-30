@@ -2143,6 +2143,7 @@ const enUS: Record<string, string> = {
   "settings.guideNew.backendEmptyHint": "No backend folder selected yet.",
   "settings.guideNew.required": "Required",
   "settings.guideNew.addFolder": "Add folder",
+  "settings.guideNew.dialogTitle": "Choose a project folder",
   "settings.guideNew.removeFolder": "Remove folder",
   "settings.guideNew.submitHint":
     "Submit becomes available once the name and at least one folder per module are provided.",

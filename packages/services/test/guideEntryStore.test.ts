@@ -53,6 +53,39 @@ test("GuideEntryStore 建表迁移幂等且 CRUD 落在独立库", async () => {
   }
 });
 
+test("guideEntryService.pickDirectory 透传原生选择器结果（选中/取消/不支持）", async () => {
+  const home = await mkdtemp(join(tmpdir(), "guide-entry-pick-"));
+  setDataBaseDir(home);
+  const store = new GuideEntryStore({ startupDbPath: join(home, "unused.sqlite") });
+  const calls: string[] = [];
+  const service = createGuideEntryService(store, {
+    pickNativeDirectory: async (description) => {
+      calls.push(description);
+      if (description === "pick") return { supported: true, path: "D:\\repo\\front" };
+      if (description === "cancel") return { supported: true, path: null };
+      return { supported: false, path: null };
+    },
+  });
+  try {
+    assert.deepEqual(await service.pickDirectory({ description: "pick" }), {
+      supported: true,
+      path: "D:\\repo\\front",
+    });
+    assert.deepEqual(await service.pickDirectory({ description: "cancel" }), {
+      supported: true,
+      path: null,
+    });
+    assert.deepEqual(await service.pickDirectory({ description: "unsupported" }), {
+      supported: false,
+      path: null,
+    });
+    assert.deepEqual(calls, ["pick", "cancel", "unsupported"]);
+  } finally {
+    store.close();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("guideEntryService 校验名称必填与前后端各至少一个文件夹", async () => {
   const home = await mkdtemp(join(tmpdir(), "guide-entry-service-"));
   setDataBaseDir(home);

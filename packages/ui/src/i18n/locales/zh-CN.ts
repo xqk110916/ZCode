@@ -2013,6 +2013,7 @@ const zhCN: Record<string, string> = {
   "settings.guideNew.backendEmptyHint": "尚未选择后端项目文件夹。",
   "settings.guideNew.required": "必选",
   "settings.guideNew.addFolder": "添加文件夹",
+  "settings.guideNew.dialogTitle": "选择项目文件夹",
   "settings.guideNew.removeFolder": "移除文件夹",
   "settings.guideNew.submitHint": "名称与前后端各至少一个文件夹填写完整后可提交。",
   "settings.guideNew.submit": "添加到工作区",
