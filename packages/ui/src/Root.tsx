@@ -500,7 +500,6 @@ function RootInner({
     handleOpenFolderFromWorkspaceMenu,
     handleCreateScratchWorkspace,
     handleCreateTask,
-    handleAddWorkspaceProjects,
     handleBackFromSettings,
   } = useRootWorkspaceActions({
     intl,
@@ -1018,8 +1017,6 @@ function RootInner({
         showChildrenWhileLoading={!workspaceShellPath && isSettingsTabActive}
         isMacDesktop={isMacDesktop}
         isWindowsDesktop={isWindowsDesktop}
-        onAddWorkspaceProjects={handleAddWorkspaceProjects}
-        preferDirectoryBrowser={shouldPreferDirectoryBrowser}
       >
         {/* 新引导属于应用级偏好；无项目时也要挂载，才能响应设置页的手动打开请求。 */}
         {!workspaceShellPath ? (

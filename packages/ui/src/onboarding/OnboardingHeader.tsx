@@ -8,15 +8,12 @@ export function OnboardingHeader({
   t,
   onBack,
   onClose,
-  progressKeys = ["stepRole", "stepMode", "stepPreferences"],
 }: {
   step: 0 | 1 | 2;
   saving: boolean;
   t: (key: string) => string;
   onBack: () => void;
   onClose: () => void;
-  /** 传 null 隐藏进度条（单步流程，如设置「引导(新)」复用本头部时）。 */
-  progressKeys?: readonly string[] | null;
 }) {
   return (
     <header className="relative grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] [@media(max-height:740px)]:h-10 items-center px-6 sm:px-10">
@@ -31,31 +28,29 @@ export function OnboardingHeader({
           {t("back")}
         </Button>
       ) : null}
-      {progressKeys ? (
-        <ol
-          aria-label={t("preferences")}
-          className="col-start-2 row-start-1 flex w-28 items-center gap-2"
-        >
-          {progressKeys.map((key, index) => (
-            <li
-              key={key}
-              aria-current={step === index ? "step" : undefined}
-              className="min-w-0 flex-1"
-            >
-              <div
-                aria-hidden="true"
-                className={cn(
-                  "h-1 rounded-full transition-colors",
-                  index <= step ? "bg-primary" : "bg-border",
-                )}
-              />
-              <span className="sr-only">
-                {index + 1}. {t(key)}
-              </span>
-            </li>
-          ))}
-        </ol>
-      ) : null}
+      <ol
+        aria-label={t("preferences")}
+        className="col-start-2 row-start-1 flex w-28 items-center gap-2"
+      >
+        {["stepRole", "stepMode", "stepPreferences"].map((key, index) => (
+          <li
+            key={key}
+            aria-current={step === index ? "step" : undefined}
+            className="min-w-0 flex-1"
+          >
+            <div
+              aria-hidden="true"
+              className={cn(
+                "h-1 rounded-full transition-colors",
+                index <= step ? "bg-primary" : "bg-border",
+              )}
+            />
+            <span className="sr-only">
+              {index + 1}. {t(key)}
+            </span>
+          </li>
+        ))}
+      </ol>
       <Button
         variant="ghost"
         size="icon"

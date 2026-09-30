@@ -68,7 +68,7 @@
 
 - 日常开发调试默认在 Web 端进行：`pnpm dev:web`（Web 客户端 + 服务端），功能验证以浏览器为准；Electron 桌面端不作为日常迭代的主要验证环境。
 - `packages/ui` 为两端共享层，改动默认同时影响 Web 与桌面。涉及平台能力差异的功能（目录/文件选择、窗口与标题栏、preload 注入、系统能力等）必须按两端各自的实现路径分别处理，不允许只实现或只验证单端即视为完成。
-- Web 端没有系统对话框等桌面能力：此类场景优先复用服务端能力代弹系统对话框（如引导(新)的 `IGuideEntryService.pickDirectory`），能力缺失或非 Windows 时沿用降级口径（服务端目录浏览器 `DirectoryBrowser`、`preferDirectoryBrowser`）；禁止在 Web 上下文直接依赖 `platform.selectDirectory` 等桌面专属调用。
+- Web 端没有系统对话框等桌面能力：此类场景优先复用服务端能力代弹系统对话框，能力缺失或非 Windows 时沿用降级口径（服务端目录浏览器 `DirectoryBrowser`、`preferDirectoryBrowser`）；禁止在 Web 上下文直接依赖 `platform.selectDirectory` 等桌面专属调用。
 - 发版前以 Electron 桌面端为主做一轮回归：覆盖本迭代改动的功能点与打包验证；在此之前桌面端问题不得积压到发版才暴露。
 
 ## Git 提交

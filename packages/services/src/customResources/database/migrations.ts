@@ -5,30 +5,12 @@ import { CUSTOM_RESOURCES_SCHEMA } from "#src/customResources/database/schema-v1
 
 // 与 tasksDatabase 相同的账本策略：冻结 checksum 输入，禁用 function.toString 哈希，
 // 避免 Electron/SEA 打包改变函数文本导致已应用 migration 校验失败。
-// 0002：设置「引导(新)」的项目引导记录（见 specs/ui/settings-guide-new.md）。
-const GUIDE_ENTRIES_SCHEMA = `
-      CREATE TABLE IF NOT EXISTS guide_entries (
-        entry_id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        remark TEXT NOT NULL DEFAULT '',
-        frontend_paths_json TEXT NOT NULL,
-        backend_paths_json TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_guide_entries_created
-      ON guide_entries (created_at DESC);
-    `;
-
+// 历史备注：0002_guide_entries（设置「引导(新)」记录表）随该废弃功能移除；
+// 已应用过 0002 的库中多余账本行与空表不影响后续迁移判定。
 const definitions = [
   {
     id: "0001_initial_custom_resources",
     checksumInput: [CUSTOM_RESOURCES_SCHEMA],
-  },
-  {
-    id: "0002_guide_entries",
-    checksumInput: [GUIDE_ENTRIES_SCHEMA],
   },
 ] as const;
 
@@ -76,8 +58,7 @@ export function runCustomResourcesMigrations(
       }
       if (migrationFacts.kind === "none") migrationFacts.kind = "initialize";
       options.onProgress?.("migrating", { ...migrationFacts });
-      if (migration.id === "0001_initial_custom_resources") db.exec(CUSTOM_RESOURCES_SCHEMA);
-      else db.exec(GUIDE_ENTRIES_SCHEMA);
+      db.exec(CUSTOM_RESOURCES_SCHEMA);
       migrationFacts.executedCount++;
       db.prepare("INSERT INTO custom_resources_schema_migration VALUES(?,?,?)").run(
         migration.id,

@@ -21,8 +21,9 @@ ZCode 桌面端/Web 端侧边栏的「任务分组」与「项目」两类资源
 | --- | --- | --- |
 | 分组 4 张表 | `CustomResourcesRepo`（`packages/services/src/customResources/customResourcesRepo.ts`） | `custom-resources.sqlite` |
 | 项目 3 字段 | `ProjectSessionStore`（`packages/services/src/customResources/projectSessionStore.ts`），经 `settingService` 路由 | `custom-resources.sqlite` 的 `resource_kv` 表 |
-| 引导记录 | `GuideEntryStore`（`packages/services/src/customResources/guideEntryStore.ts`），经 `IGuideEntryService` 暴露（见 `specs/ui/settings-guide-new.md`） | `custom-resources.sqlite` 的 `guide_entries` 表 |
 | 任务索引 | `TaskIndexRepo`（不再读写任何 `task_group*` 表） | `tasks-index.sqlite` |
+
+> 历史备注：曾在此库增加 `guide_entries` 表承载设置「引导(新)」记录（migration `0002_guide_entries`）；该功能已废弃并随代码移除，已应用过 0002 的库中残留的账本行与空表不影响后续迁移判定。
 
 `TaskIndexRepo` 与 `CustomResourcesRepo` 通过两个窄接口协作（均定义在 customResources 模块，避免模块级循环导入）：
 

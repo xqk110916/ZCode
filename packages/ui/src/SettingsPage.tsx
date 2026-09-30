@@ -1,5 +1,5 @@
 /* oxlint-disable eslint(max-lines) */
-import { ArrowLeft, Compass, Rocket, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Rocket, type LucideIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -336,9 +336,6 @@ export function SettingsPage({
     readonly SettingsBreadcrumbItem[]
   >([]);
   const interfaceMode = useZCodeStore((state) => state.interfaceMode);
-  const setGuideNewOnboardingOpen = useZCodeStore(
-    (state) => state.setGuideNewOnboardingOpen,
-  );
   const setInterfaceMode = useZCodeStore((state) => state.setInterfaceMode);
   const theme = useZCodeStore((state) => state.theme);
   const setTheme = useZCodeStore((state) => state.setTheme);
@@ -1528,29 +1525,6 @@ export function SettingsPage({
                 >
                   <span className="text-ui-base text-foreground">
                     {intl.formatMessage({ id: "settings.onboarding" })}
-                  </span>
-                </SettingsSidebarButton>
-                {/* 引导(新)：与「引导」并列的虚线入口，打开复用引导页覆盖层的项目引导流程
-                    （specs/ui/settings-guide-new.md）。 */}
-                <SettingsSidebarButton
-                  icon={Compass}
-                  label={intl.formatMessage({ id: "settings.guideNew.title" })}
-                  className="mt-2 border border-dashed border-border hover:border-border-hover"
-                  onClick={() => {
-                    runUserAction({
-                      input: {
-                        featureId: "settings.navigation",
-                        action: "open_guide_new",
-                        trigger: "button",
-                      },
-                      operation: () => setGuideNewOnboardingOpen(true),
-                      completed: { resultSource: "local_commit" },
-                      failureStage: "dialog_open",
-                    });
-                  }}
-                >
-                  <span className="text-ui-base text-foreground">
-                    {intl.formatMessage({ id: "settings.guideNew.title" })}
                   </span>
                 </SettingsSidebarButton>
               </nav>

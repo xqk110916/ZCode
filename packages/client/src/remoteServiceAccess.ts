@@ -11,7 +11,6 @@ import {
   ICredentialService,
   IBroadcastService,
   IZCodeTaskService,
-  IGuideEntryService,
   IZCodeAgentService,
   IZCodeSessionService,
   ICuaPermissionService,
@@ -61,7 +60,6 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly credentialService: ICredentialService;
   readonly broadcastService: IBroadcastService;
   readonly zcodeTaskService: IZCodeTaskService;
-  readonly guideEntryService: IGuideEntryService;
   readonly windowControllerService: IWindowControllerService;
   readonly zcodeAgentService: IZCodeAgentService;
   readonly zcodeSessionService: IZCodeSessionService;
@@ -130,9 +128,6 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.zcodeTaskService = ProxyChannel.toService<IZCodeTaskService>(
       channelClient.getChannel(IZCodeTaskService.channelName),
-    );
-    this.guideEntryService = ProxyChannel.toService<IGuideEntryService>(
-      channelClient.getChannel(IGuideEntryService.channelName),
     );
     this.windowControllerService = ProxyChannel.toService<IWindowControllerService>(
       channelClient.getChannel(IWindowControllerService.channelName),

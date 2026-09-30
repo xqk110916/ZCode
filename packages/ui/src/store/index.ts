@@ -202,9 +202,6 @@ export interface ZCodeState {
   /** 手动请求打开 onboarding 弹窗 */
   newUserOnboardingOpen: boolean;
   setNewUserOnboardingOpen: (open: boolean) => void;
-  /** 设置「引导(新)」全屏引导（复用 OccupationOnboarding 覆盖层；窗口本地状态不广播）。 */
-  guideNewOnboardingOpen: boolean;
-  setGuideNewOnboardingOpen: (open: boolean) => void;
   onboardingDialogRequested: boolean | "migration";
   requestOnboardingDialog: (entry?: "migration") => void;
   clearOnboardingDialogRequest: () => void;
@@ -395,8 +392,6 @@ export function createZCodeStore(
 
     newUserOnboardingOpen: false,
     setNewUserOnboardingOpen: (open) => set({ newUserOnboardingOpen: open }),
-    guideNewOnboardingOpen: false,
-    setGuideNewOnboardingOpen: (open) => set({ guideNewOnboardingOpen: open }),
     onboardingDialogRequested: false,
     requestOnboardingDialog: (entry) => set({ onboardingDialogRequested: entry ?? true }),
     clearOnboardingDialogRequest: () => set({ onboardingDialogRequested: false }),

@@ -360,12 +360,6 @@ import { createZCodeSessionService } from "./zcode-session/zcodeSessionService.j
 import { createZCodeTaskIndexSyncer } from "./zcode-agent/zcodeTaskIndexSyncer.js";
 import { TaskIndexRepo } from "./session/taskIndexRepo.js";
 import { CustomResourcesRepo } from "./customResources/customResourcesRepo.js";
-import { GuideEntryStore } from "./customResources/guideEntryStore.js";
-import {
-  createGuideEntryService,
-  IGuideEntryService,
-} from "./customResources/guideEntryService.js";
-import { pickWindowsDirectory } from "./customResources/nativeDirectoryPicker.js";
 import { createBotsService } from "./bots/botsService.js";
 import { createBotRemoteWorkspaceService } from "./bots/botRemoteWorkspaceBridge.js";
 import type { SessionMessageSendRequested } from "#src/session/sessionMailbox.js";
@@ -1459,12 +1453,6 @@ export function createLocalServices(options: {
   // CustomResourcesRepo 的分组校验/join 经 TaskGroupTaskReaderPort 读 tasks-index。
   const customResourcesRepo = new CustomResourcesRepo({ taskReader: taskIndexRepo });
   taskIndexRepo.bindTaskGroupStore(customResourcesRepo);
-  // 设置「引导(新)」的项目引导记录（guide_entries 表，specs/ui/settings-guide-new.md）；
-  // 原生文件夹选择器依赖 node:child_process，只能在这一侧注入（描述符模块需浏览器安全）。
-  const guideEntryStore = new GuideEntryStore();
-  const guideEntryService = createGuideEntryService(guideEntryStore, {
-    pickNativeDirectory: pickWindowsDirectory,
-  });
   // onboarding 完成记录：userId 由登录态补全（apikey/未登录为 null）。
   const onboardingRecordService = createOnboardingRecordService({
     loadUserId: async () => (await oauthCredentialRepo.loadActiveUserProfile())?.id ?? null,
@@ -2458,7 +2446,7 @@ export function createLocalServices(options: {
       });
   // 注册链上的懒工厂（如 OffPeak）会各自创建 tasks-index sqlite repo；先收集到本数组，
   // services 集合建好后在 return 前统一登记进 sharedSqliteRepos 侧表
-  const sqliteReposToClose: Array<{ close(): void }> = [customResourcesRepo, guideEntryStore];
+  const sqliteReposToClose: Array<{ close(): void }> = [customResourcesRepo];
   const services = new ServiceCollection()
     .register(IFileService, fileService)
     .register(IMediaPreviewService, mediaPreviewService)
@@ -2471,7 +2459,6 @@ export function createLocalServices(options: {
     .register(ICredentialService, credentialService)
     .register(IBroadcastService, broadcastService)
     .register(IZCodeTaskService, zcodeTaskService)
-    .register(IGuideEntryService, guideEntryService)
     .register(IZCodeAgentService, zcodeAgentService)
     .register(IZCodeSessionService, zcodeSessionService)
     .register(ICuaPermissionService, cuaPermissionService)
