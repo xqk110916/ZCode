@@ -21,6 +21,7 @@ import {
   FolderOpen,
   Hash,
   ListFilter,
+  ListChecks,
   Maximize2,
   MessageCircleCheck,
   MessageCirclePlus,
@@ -259,8 +260,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenCommandCenter,
   onOpenAutomations,
   onOpenPluginStore,
+  onOpenPaperclip,
   automationsActive = false,
   pluginStoreActive = false,
+  paperclipActive = false,
   onFileTreeOpenChange,
 }: {
   workspacePath: string;
@@ -311,8 +314,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenCommandCenter: () => void;
   onOpenAutomations?: () => void;
   onOpenPluginStore?: () => void;
+  onOpenPaperclip?: () => void;
   automationsActive?: boolean;
   pluginStoreActive?: boolean;
+  paperclipActive?: boolean;
   onFileTreeOpenChange?: (open: boolean) => void;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
@@ -752,6 +757,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const handleOpenPluginStoreMain = useCallback(() => {
     onOpenPluginStore?.();
   }, [onOpenPluginStore]);
+  const handleOpenPaperclipMain = useCallback(() => {
+    onOpenPaperclip?.();
+  }, [onOpenPaperclip]);
   const handleOpenAutomationsMain = useCallback(() => {
     onOpenAutomations?.();
   }, [onOpenAutomations]);
@@ -1345,6 +1353,21 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
             >
               <Blocks className="size-4" />
               {intl.formatMessage({ id: "workspace.openPluginsSettings" })}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={handleOpenPaperclipMain}
+              data-icon="inline-start"
+              data-testid="paperclip-sidebar-open"
+              size="lg"
+              aria-pressed={paperclipActive}
+              className={cn(
+                "w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground",
+                paperclipActive && "bg-selected text-foreground",
+              )}
+            >
+              <ListChecks className="size-4" />
+              {intl.formatMessage({ id: "workspace.openPaperclipSettings" })}
             </Button>
           </div>
 

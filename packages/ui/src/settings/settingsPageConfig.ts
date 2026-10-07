@@ -18,6 +18,7 @@ import {
   WandSparkles,
   Keyboard,
   FileSearch,
+  ListChecks,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -120,6 +121,12 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "hooks",
     icon: Anchor,
     titleId: "settings.hooks.title",
+    groupId: "agentCapabilities",
+  },
+  {
+    id: "paperclip",
+    icon: ListChecks,
+    titleId: "settings.paperclip.title",
     groupId: "agentCapabilities",
   },
   {

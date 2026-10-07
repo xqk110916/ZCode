@@ -944,6 +944,13 @@ export function App({
     });
     openSettingsTab();
   }, [openSettingsTab, pluginStoreReturnScopeKey]);
+  const handleNavigateToPaperclipMain = useCallback(() => {
+    preserveNextSettingsExit();
+    setWorkspaceMainView("paperclip");
+  }, [preserveNextSettingsExit]);
+  const handleOpenPaperclipSettings = useCallback(() => {
+    handleOpenSettingsSection("paperclip");
+  }, [handleOpenSettingsSection]);
   const handlePrimaryNavigationBack =
     workspaceMainView === "plugin-store" ? handleManageInstalledPlugins : handleTaskNavBack;
   const canPrimaryNavigationBack = workspaceMainView === "plugin-store" || canTaskNavBack;
@@ -1134,6 +1141,8 @@ export function App({
         handleOpenAutomations={handleOpenAutomations}
         handleOpenPluginStore={handleOpenPluginStoreForScope}
         handleManageInstalledPlugins={handleManageInstalledPlugins}
+        handleOpenPaperclip={handleNavigateToPaperclipMain}
+        handleOpenPaperclipSettings={handleOpenPaperclipSettings}
         onConnectRemote={onConnectRemote}
         onSelectRemoteProject={onSelectRemoteProject}
         onCancelRemoteProject={onCancelRemoteProject}

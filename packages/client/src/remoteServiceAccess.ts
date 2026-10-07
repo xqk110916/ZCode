@@ -40,6 +40,7 @@ import {
   IFeedbackService,
   IPromptAttachmentTransferService,
   IWindowControllerService,
+  IPaperclipService,
   type IServiceAccessor,
 } from "@zcode/services";
 
@@ -92,6 +93,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly settingsSyncService: ISettingsSyncService;
   readonly feedbackService: IFeedbackService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
+  readonly paperclipService: IPaperclipService;
 
   constructor(channelClient: IChannelClient) {
     this.fileService = ProxyChannel.toService<IFileService>(
@@ -218,6 +220,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.promptAttachmentTransferService = ProxyChannel.toService<IPromptAttachmentTransferService>(
       channelClient.getChannel(IPromptAttachmentTransferService.channelName),
+    );
+    this.paperclipService = ProxyChannel.toService<IPaperclipService>(
+      channelClient.getChannel(IPaperclipService.channelName),
     );
   }
 }

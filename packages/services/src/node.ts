@@ -232,6 +232,10 @@ export { createSettingsSyncService } from "./settings-sync/settingsSyncService.j
 export { createFeedbackDiagnosticArchive } from "./feedback/feedbackLogArchive.js";
 export { createFeedbackService } from "./feedback/feedbackService.js";
 export type { CreateFeedbackServiceOptions } from "./feedback/feedbackService.js";
+export {
+  createPaperclipService,
+  PAPERCLIP_TOKEN_CREDENTIAL_KEY,
+} from "./paperclip/paperclipService.js";
 export { createLocalPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransferService.js";
 export {
   createLocalConversationShareArtifactSource,
@@ -336,6 +340,8 @@ import { IHooksService } from "./hooks/hooks.js";
 import { IMemoryService } from "./memory/memory.js";
 import { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 import { IFeedbackService } from "./feedback/feedback.js";
+import { IPaperclipService } from "./paperclip/paperclip.js";
+import { createPaperclipService } from "./paperclip/paperclipService.js";
 import { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
 import { createFileService } from "./file/fileService.js";
 import { createMediaPreviewService } from "./media-preview/mediaPreview.js";
@@ -688,6 +694,12 @@ export function getOffPeakRequestAuthBuilder(
   return offPeakRequestAuthBuilders.get(services);
 }
 const managedHostApiNetworkTransports = new WeakMap<ServiceCollection, HostApiNetworkTransport>();
+
+/** Paperclip 服务的 WS/Emitter 资源；dispose 时统一释放。 */
+const managedPaperclipServices = new WeakMap<
+  ServiceCollection,
+  { dispose(): void }
+>();
 
 export function registerManagedCuaHelperHostForDispose(
   services: ServiceCollection,
@@ -2447,6 +2459,10 @@ export function createLocalServices(options: {
   // 注册链上的懒工厂（如 OffPeak）会各自创建 tasks-index sqlite repo；先收集到本数组，
   // services 集合建好后在 return 前统一登记进 sharedSqliteRepos 侧表
   const sqliteReposToClose: Array<{ close(): void }> = [customResourcesRepo];
+  // Paperclip：外部编排平台客户端（REST + live-events WS）。连接懒建立（首次调用/面板打开），
+  // 这里只创建 handle；注册与 WS 生命周期收口在 services 集合建好后进行。
+  const paperclipService = createPaperclipService({ settingService, credentialService });
+
   const services = new ServiceCollection()
     .register(IFileService, fileService)
     .register(IMediaPreviewService, mediaPreviewService)
@@ -2612,7 +2628,11 @@ export function createLocalServices(options: {
         oauthService,
       }),
     )
-    .register(IPromptAttachmentTransferService, createLocalPromptAttachmentTransferService());
+    .register(IPromptAttachmentTransferService, createLocalPromptAttachmentTransferService())
+    .register(IPaperclipService, paperclipService);
+
+  // Paperclip 的 WS 订阅与事件 Emitter 随 services 释放统一关闭（侧表模式，best-effort）。
+  managedPaperclipServices.set(services, paperclipService);
 
   // 即使初始配置关闭也必须登记 lifecycle disposer：terminal fence 需要早于任意延迟 setting/acquire
   // 恢复，不能把"当前还没有 Helper"误当成"不需要生命周期所有者"。dispose 时串行 stop host。
@@ -2783,6 +2803,7 @@ export function disposeServiceResources(services: ServiceCollection): void {
   providerProvisioningTriggerDisposers.delete(services);
   providerProvisioningSources.delete(services);
   managedHostApiNetworkTransports.get(services)?.dispose();
+  managedPaperclipServices.get(services)?.dispose();
 }
 
 export async function disposeServiceResourcesAndWait(services: ServiceCollection): Promise<void> {
@@ -2823,4 +2844,5 @@ export async function disposeServiceResourcesAndWait(services: ServiceCollection
     .get(services)
     ?.disposeAndWait()
     .catch(() => {});
+  managedPaperclipServices.get(services)?.dispose();
 }

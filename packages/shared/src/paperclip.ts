@@ -1,0 +1,192 @@
+import { z } from "zod";
+
+// ============================================================================
+// Paperclip 外部编排服务的共享 DTO
+//
+// Paperclip（github.com/paperclipai/paperclip）是独立部署的 agent 编排平台，
+// ZCode 只是其 REST/WS 客户端。本文件只放 schema 类型 + 纯函数（shared 纪律），
+// 运行时连接逻辑在 packages/services 的 node 侧实现。
+//
+// Paperclip API 迭代快（camelCase 字段、错误体为 { error: string }），所有
+// schema 一律 .passthrough() 宽容解析：未知字段透传，新增必填字段缺失时
+// 以最小必填集兜底，避免上游演进出的小字段变化打断整份列表解析。
+// ============================================================================
+
+/** env 键：部署方覆盖 Paperclip server 默认地址。 */
+export const PAPERCLIP_SERVER_URL_ENV = "PAPERCLIP_SERVER_URL";
+
+/** Paperclip 默认地址（官方 quickstart 的本机端口）。 */
+export const DEFAULT_PAPERCLIP_SERVER_URL = "http://localhost:3100";
+
+/** 解析生效的 Paperclip server 地址：显式覆盖优先，回落 env 与默认值；非法输入回落默认。 */
+export function resolvePaperclipServerUrl(input: {
+  settingsValue?: string;
+  env?: Record<string, string | undefined>;
+}): string {
+  const fromSettings = input.settingsValue?.trim();
+  if (fromSettings) {
+    const normalized = normalizePaperclipServerUrl(fromSettings);
+    if (normalized) return normalized;
+  }
+  const fromEnv = input.env?.[PAPERCLIP_SERVER_URL_ENV]?.trim();
+  if (fromEnv) {
+    const normalized = normalizePaperclipServerUrl(fromEnv);
+    if (normalized) return normalized;
+  }
+  return DEFAULT_PAPERCLIP_SERVER_URL;
+}
+
+/** 规范化 server 地址：去尾部斜杠与 /api 后缀（客户端统一自己拼路径）。空/非法返回 null。 */
+export function normalizePaperclipServerUrl(value: string): string | null {
+  try {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    let path = url.pathname.replace(/\/+$/, "");
+    if (path === "/api") path = "";
+    return `${url.protocol}//${url.host}${path}`;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 基础枚举
+// ---------------------------------------------------------------------------
+
+/** Paperclip issue 状态（对应其 issues API 的 status 枚举；未知值透传为字符串）。 */
+export const paperclipIssueStatusSchema = z
+  .enum(["todo", "in_progress", "in_review", "blocked", "done", "cancelled"])
+  .catch("todo");
+export type PaperclipIssueStatus = z.infer<typeof paperclipIssueStatusSchema>;
+
+/** Paperclip issue 优先级。 */
+export const paperclipIssuePrioritySchema = z
+  .enum(["urgent", "high", "medium", "low"])
+  .catch("medium");
+export type PaperclipIssuePriority = z.infer<typeof paperclipIssuePrioritySchema>;
+
+// ---------------------------------------------------------------------------
+// 实体
+// ---------------------------------------------------------------------------
+
+export const paperclipCompanySchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().optional().catch(""),
+  })
+  .passthrough();
+export type PaperclipCompany = z.infer<typeof paperclipCompanySchema>;
+
+export const paperclipAgentSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().optional().catch(""),
+    /** adapter 类型（claude_local / grok_local / codex_local …），驱动方式与展示用。 */
+    adapterType: z.string().optional().catch(""),
+    /** agent 当前模型 id（可能未配置）。 */
+    model: z.string().nullish().catch(null),
+    /** agent 职级/头衔（Paperclip 组织属性）。 */
+    title: z.string().nullish().catch(null),
+    /** agent 状态（active/paused 等，Paperclip 侧语义）。 */
+    status: z.string().nullish().catch(null),
+  })
+  .passthrough();
+export type PaperclipAgent = z.infer<typeof paperclipAgentSchema>;
+
+export const paperclipIssueSchema = z
+  .object({
+    id: z.string().min(1),
+    /** 人类可读编号（如 PAP-99）。 */
+    identifier: z.string().nullish().catch(null),
+    title: z.string().optional().catch(""),
+    description: z.string().nullish().catch(null),
+    status: paperclipIssueStatusSchema,
+    priority: paperclipIssuePrioritySchema,
+    assigneeAgentId: z.string().nullish().catch(null),
+    projectId: z.string().nullish().catch(null),
+    goalId: z.string().nullish().catch(null),
+    parentId: z.string().nullish().catch(null),
+    createdAt: z.string().nullish().catch(null),
+    updatedAt: z.string().nullish().catch(null),
+  })
+  .passthrough();
+export type PaperclipIssue = z.infer<typeof paperclipIssueSchema>;
+
+// ---------------------------------------------------------------------------
+// 连接状态与事件
+// ---------------------------------------------------------------------------
+
+/**
+ * 服务连接状态机：
+ * - disconnected：未配置 / 探活失败 / 重连等待中
+ * - connecting：探活与 companyId 解析进行中
+ * - connected：REST 可用且 live-events WS 已建立（任务事件实时推送）
+ * - polling：REST 可用但 WS 不可用（认证拒绝或路径不支持），降级为手动/轮询刷新
+ */
+export const paperclipConnectionStateSchema = z.enum([
+  "disconnected",
+  "connecting",
+  "connected",
+  "polling",
+]);
+export type PaperclipConnectionState = z.infer<typeof paperclipConnectionStateSchema>;
+
+export interface PaperclipConnectionStateSnapshot {
+  state: PaperclipConnectionState;
+  /** 生效的 server 地址（用于 UI 展示）。 */
+  serverUrl: string;
+  /** 进入当前状态的时间（epoch ms）。 */
+  changedAt: number;
+  /** 最近一次失败原因（state 为 disconnected 时可能有值）。 */
+  lastError?: string;
+}
+
+/** live-events 归一化后的 issue 事件（字段宽容：Paperclip 事件 payload 未稳定承诺）。 */
+export interface PaperclipIssueEvent {
+  /** 事件粗分类：issue 增删改。 */
+  kind: "created" | "updated" | "deleted" | "unknown";
+  issueId?: string;
+  issue?: PaperclipIssue;
+  /** 原始事件 type 字符串（透传，便于排查）。 */
+  rawType?: string;
+  receivedAt: number;
+}
+
+// ---------------------------------------------------------------------------
+// 请求输入
+// ---------------------------------------------------------------------------
+
+export interface PaperclipCreateIssueInput {
+  title: string;
+  description?: string;
+  priority?: PaperclipIssuePriority;
+  /** 指派给哪个 agent（Paperclip 收到后自动入唤醒队列）。 */
+  assigneeAgentId?: string;
+  projectId?: string;
+}
+
+export interface PaperclipUpdateIssueInput {
+  title?: string;
+  description?: string;
+  status?: PaperclipIssueStatus;
+  priority?: PaperclipIssuePriority;
+  /** PATCH 同时携带的评论（Paperclip 审批门禁要求决策评论同请求提交）。 */
+  comment?: string;
+}
+
+export interface PaperclipIssueFilter {
+  status?: PaperclipIssueStatus[];
+  assigneeAgentId?: string;
+}
+
+export interface PaperclipTestConnectionResult {
+  ok: boolean;
+  /** 失败时的人类可读原因（含 HTTP 状态或网络错误摘要）。 */
+  error?: string;
+  /** 连接成功时的 server 版本/健康信息（尽力解析）。 */
+  serverInfo?: {
+    version?: string;
+  };
+}

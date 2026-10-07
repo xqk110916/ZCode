@@ -366,4 +366,10 @@ export interface AppSettings {
   settingsSyncFirstRunPromptHandled?: boolean;
   /** 设置页里的临时 endpoint override；正式/测试默认 base url 由 ZCODE_BASE_URL env 管理。 */
   zcodeEndpointOrigin?: string;
+  /**
+   * Paperclip server 地址覆盖（外部 agent 编排平台，独立部署）；
+   * 为空时回落 PAPERCLIP_SERVER_URL env 与默认 http://localhost:3100。
+   * 见 specs/services/paperclip-integration.md。
+   */
+  paperclipServerUrl?: string;
 }

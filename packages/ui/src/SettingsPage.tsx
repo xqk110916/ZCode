@@ -68,6 +68,7 @@ import { AutomationsSection } from "@/settings/AutomationsSection.js";
 import { SegmentPill } from "@/settings/PluginStoreListView.js";
 import { PluginsSection } from "@/settings/PluginsSection.js";
 import { HooksSection } from "@/settings/HooksSection.js";
+import { PaperclipSettingsSection } from "@/settings/PaperclipSettingsSection.js";
 import { WorkspaceFileSearchSection } from "@/settings/WorkspaceFileSearchSection.js";
 import { MemorySettingsSection } from "@/settings/MemorySettingsSection.js";
 import { BrowserSettingsSection } from "@/settings/BrowserSettingsSection.js";
@@ -1918,6 +1919,8 @@ export function SettingsPage({
                             workspacePath={activeWorkspacePath}
                             workspaceIdentity={activeWorkspaceIdentity}
                           />
+                        ) : activeSection === "paperclip" ? (
+                          <PaperclipSettingsSection />
                         ) : activeSection === "workspaceFileSearch" ? (
                           <WorkspaceFileSearchSection
                             workspacePath={activeWorkspacePath}

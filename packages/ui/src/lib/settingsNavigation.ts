@@ -19,6 +19,7 @@ export type SettingsSectionId =
   | "workspaceFileSearch"
   | "computerUse"
   | "automations"
+  | "paperclip"
   | "shortcuts";
 
 type SettingsUsageTabTarget = "app" | "codingPlan";

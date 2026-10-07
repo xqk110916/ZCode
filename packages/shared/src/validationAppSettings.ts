@@ -5,6 +5,7 @@ import { REMOTE_ASSET_INSTALL_MODES } from "./remoteAssetInstallMode.js";
 import { isKnownRemoteResourcePackageId } from "./remoteResourcePackages.js";
 import { wslUserSchema } from "./wslUserValidation.js";
 import { normalizeZCodeEndpointOrigin } from "./zcodeEndpoint.js";
+import { normalizePaperclipServerUrl } from "./paperclip.js";
 import {
   DEFAULT_EMBEDDED_BROWSER_VIEWPORT_PREFERENCE,
   embeddedBrowserViewportPreferenceSchema,
@@ -133,6 +134,15 @@ const zcodeEndpointOriginSchema = z.preprocess((value) => {
   } catch {
     return undefined;
   }
+}, z.string().optional());
+
+/** Paperclip server 地址：坏值丢弃该字段（非关键偏好，不能拖垮整份 settings 读取）。 */
+const paperclipServerUrlSchema = z.preprocess((value) => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = normalizePaperclipServerUrl(value);
+  return normalized ?? undefined;
 }, z.string().optional());
 
 function sanitizeZCodeEndpointOrigin(value: unknown): unknown {
@@ -472,6 +482,7 @@ const appSettingsObjectSchema = z.object({
   skippedElectronUpdateVersions: skippedElectronUpdateVersionsSchema,
   settingsSyncFirstRunPromptHandled: z.boolean().optional(),
   zcodeEndpointOrigin: zcodeEndpointOriginSchema.optional(),
+  paperclipServerUrl: paperclipServerUrlSchema.optional(),
 });
 
 export const appSettingsSchema = z.preprocess(
@@ -559,4 +570,5 @@ export const appSettingsPatchSchema = z.object({
     .optional(),
   settingsSyncFirstRunPromptHandled: z.boolean().optional(),
   zcodeEndpointOrigin: zcodeEndpointOriginSchema.optional(),
+  paperclipServerUrl: paperclipServerUrlSchema.optional(),
 });
