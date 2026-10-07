@@ -69,3 +69,7 @@ packages/desktop/.e2e-artifacts/
 packages/desktop/.e2e-cache/
 packages/desktop/.e2e-network-capture/
 .zcode-runtime/
+
+# 工作区级 .zcode 运行产物：plan 模式按会话落盘的计划文档，可再生。
+# 只忽略 plans，不忽略整个 .zcode/——.zcode/commands 是项目自定义命令目录，需可跟踪。
+.zcode/plans/

@@ -37,6 +37,7 @@
 
 ### 文档与工程
 
+- `.gitignore`：新增工作区 `.zcode/plans/` 忽略（plan 模式按会话落盘的计划文档运行产物；`.zcode/commands/` 仍可跟踪）。
 - `AGENTS.md`：新增「桌面端打包」分档说明（全量 / 快速）、「双端（Web / 桌面）开发与验证口径」（日常调试以 Web 端为主、共享层改动两端覆盖、Web 平台能力降级口径、发版前桌面端回归）与「Git 提交」规范（Conventional Commits + 每次提交同步维护 CHANGELOG.md）。
 - 新增 spec：`specs/services/custom-resource-store.md`。
 - `packages/web` vite dev 开启 `strictPort`：端口被占用时直接失败，避免端口顺延漂移。
