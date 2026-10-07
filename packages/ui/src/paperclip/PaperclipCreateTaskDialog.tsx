@@ -1,10 +1,11 @@
 /**
  * Paperclip 创建任务对话框：标题/描述/优先级/指派。
- * 指派支持「主 Agent 自动分派」（DISPATCH_ASSIGNEE 特殊值）：提交时由 Page 侧把
- * 分派指令模板拼进 description 并指派给 dispatcher（role=ceo）；智能判断的主体是
- * dispatcher 的 LLM，本组件只做路由选择。
+ * 指派用可视化选项组（自动分派置顶主推，含分派指令的透明化预览）；优先级为分段
+ * 选择；支持 ⌘/Ctrl+Enter 提交。自动分派（DISPATCH_ASSIGNEE 特殊值）提交时由
+ * Page 侧把分派指令模板拼进 description 并指派给 dispatcher（role=ceo）。
  */
-import { Loader2, Plus, Sparkles } from "lucide-react";
+import { Loader2, Plus, Sparkles, UserRound } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible.js";
 import type {
   PaperclipAgent,
   PaperclipIssuePriority,
@@ -20,15 +21,9 @@ import {
 } from "@/components/ui/dialog.js";
 import { Input } from "@/components/ui/input.js";
 import { Label } from "@/components/ui/label.js";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { SettingsFormTextarea } from "@/settings/SettingsFormTextarea.js";
+import { cn } from "@/components/lib/utils.js";
 import { agentDisplayName, priorityLabelKey } from "@/paperclip/paperclipViews.js";
 
 /** assigneeAgentId 的特殊值：主 Agent 自动分派。 */
@@ -64,6 +59,8 @@ export const EMPTY_CREATE_DIALOG_STATE: PaperclipCreateDialogState = {
   assigneeAgentId: "",
 };
 
+const PRIORITIES: ReadonlyArray<PaperclipIssuePriority> = ["urgent", "high", "medium", "low"];
+
 export function PaperclipCreateTaskDialog({
   open,
   agents,
@@ -89,9 +86,34 @@ export function PaperclipCreateTaskDialog({
 }) {
   const { intl } = useZCodeIntl();
   const autoDispatch = state.assigneeAgentId === PAPERCLIP_DISPATCH_ASSIGNEE;
+
+  function selectAssignee(value: string) {
+    onStateChange({ ...state, assigneeAgentId: value });
+  }
+
+  const assigneeOptionClass = (selected: boolean) =>
+    cn(
+      "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-ui-base transition-colors",
+      selected
+        ? "border-border-focused bg-selected text-foreground"
+        : "border-border-subtle text-foreground-subtle hover:bg-surface-hover hover:text-foreground",
+    );
+
+  const canSubmit =
+    state.title.trim().length > 0 && !submitting && !(autoDispatch && !dispatcher);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        className="sm:max-w-lg"
+        onKeyDown={(event) => {
+          // ⌘/Ctrl+Enter 快捷提交（DESIGN.md：键盘是 first-class 交互路径）。
+          if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canSubmit) {
+            event.preventDefault();
+            onSubmit();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{intl.formatMessage({ id: "paperclip.createTask" })}</DialogTitle>
           <DialogDescription>
@@ -108,6 +130,7 @@ export function PaperclipCreateTaskDialog({
               value={state.title}
               onChange={(event) => onStateChange({ ...state, title: event.target.value })}
               placeholder={intl.formatMessage({ id: "paperclip.form.titlePlaceholder" })}
+              autoFocus
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -120,78 +143,124 @@ export function PaperclipCreateTaskDialog({
               onChange={(event) => onStateChange({ ...state, description: event.target.value })}
               rows={4}
             />
-            {autoDispatch ? (
-              <p className="text-ui-sm text-foreground-subtlest">
-                {intl.formatMessage({ id: "paperclip.form.dispatchDirectiveHint" })}
-              </p>
-            ) : null}
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1">
-              <Label>{intl.formatMessage({ id: "paperclip.form.assignee" })}</Label>
-              <Select
-                value={state.assigneeAgentId}
-                onValueChange={(value) => onStateChange({ ...state, assigneeAgentId: value })}
+          <div className="flex flex-col gap-1">
+            <Label role="group">{intl.formatMessage({ id: "paperclip.form.assignee" })}</Label>
+            <div role="radiogroup" aria-label={intl.formatMessage({ id: "paperclip.form.assignee" })} className="flex flex-col gap-1">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={autoDispatch}
+                onClick={() => selectAssignee(PAPERCLIP_DISPATCH_ASSIGNEE)}
+                className={assigneeOptionClass(autoDispatch)}
               >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={intl.formatMessage({ id: "paperclip.form.assigneeAny" })}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={PAPERCLIP_DISPATCH_ASSIGNEE}>
-                    <span className="flex items-center gap-1">
-                      <Sparkles className="size-3" />
-                      {intl.formatMessage({ id: "paperclip.form.assigneeAuto" })}
-                    </span>
-                  </SelectItem>
-                  {agents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      {agentDisplayName(agent)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {autoDispatch && !dispatcher ? (
-                <div className="flex flex-col gap-1">
-                  <p className="text-ui-sm text-warning">
-                    {intl.formatMessage({ id: "paperclip.form.dispatcherMissing" })}
-                  </p>
+                <Sparkles className="size-4 shrink-0 text-info" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">
+                    {intl.formatMessage({ id: "paperclip.form.assigneeAuto" })}
+                  </span>
+                  <span className="block truncate text-ui-sm text-foreground-subtlest">
+                    {dispatcher
+                      ? intl.formatMessage(
+                          { id: "paperclip.form.assigneeAutoBy" },
+                          { name: agentDisplayName(dispatcher) },
+                        )
+                      : intl.formatMessage({ id: "paperclip.form.dispatcherMissing" })}
+                  </span>
+                </span>
+                {autoDispatch && !dispatcher ? (
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="xs"
                     disabled={ensuringDispatcher}
-                    onClick={onEnsureDispatcher}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onEnsureDispatcher();
+                    }}
                   >
                     {ensuringDispatcher ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Sparkles className="size-4" />
-                    )}
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : null}
                     {intl.formatMessage({ id: "paperclip.form.createDispatcher" })}
                   </Button>
-                </div>
-              ) : null}
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label>{intl.formatMessage({ id: "paperclip.form.priority" })}</Label>
-              <Select
-                value={state.priority}
-                onValueChange={(value) =>
-                  onStateChange({ ...state, priority: value as PaperclipIssuePriority })
-                }
+                ) : null}
+              </button>
+              {agents
+                .filter((agent) => agent.id !== dispatcher?.id)
+                .map((agent) => {
+                  const selected = state.assigneeAgentId === agent.id;
+                  return (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => selectAssignee(agent.id)}
+                      className={assigneeOptionClass(selected)}
+                    >
+                      <UserRound className="size-4 shrink-0 text-foreground-subtlest" />
+                      <span className="min-w-0 flex-1 truncate">{agentDisplayName(agent)}</span>
+                      {agent.adapterType ? (
+                        <span className="shrink-0 font-mono text-ui-sm text-foreground-subtlest">
+                          {agent.adapterType}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={state.assigneeAgentId === ""}
+                onClick={() => selectAssignee("")}
+                className={assigneeOptionClass(state.assigneeAgentId === "")}
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(["urgent", "high", "medium", "low"] as const).map((priority) => (
-                    <SelectItem key={priority} value={priority}>
-                      {intl.formatMessage({ id: priorityLabelKey(priority) })}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <UserRound className="size-4 shrink-0 text-foreground-subtlest" />
+                <span className="min-w-0 flex-1 truncate">
+                  {intl.formatMessage({ id: "paperclip.form.assigneeAny" })}
+                </span>
+              </button>
+            </div>
+            {autoDispatch ? (
+              <Collapsible className="mt-1">
+                <CollapsibleTrigger className="text-ui-sm text-foreground-subtle underline-offset-2 hover:text-foreground hover:underline">
+                  {intl.formatMessage({ id: "paperclip.form.viewDirective" })}
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-surface-muted p-3 font-sans text-ui-sm text-foreground-subtle">
+                    {PAPERCLIP_DISPATCH_DIRECTIVE}
+                  </pre>
+                </CollapsibleContent>
+              </Collapsible>
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label>{intl.formatMessage({ id: "paperclip.form.priority" })}</Label>
+            <div
+              role="radiogroup"
+              aria-label={intl.formatMessage({ id: "paperclip.form.priority" })}
+              className="flex w-full gap-0.5 rounded-lg border border-border-subtle bg-surface-muted p-0.5"
+            >
+              {PRIORITIES.map((priority) => {
+                const selected = state.priority === priority;
+                return (
+                  <button
+                    key={priority}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => onStateChange({ ...state, priority })}
+                    className={cn(
+                      "flex-1 rounded-md px-2 py-1 text-ui-base transition-colors",
+                      selected
+                        ? "bg-popover text-foreground shadow-sm"
+                        : "text-foreground-subtle hover:text-foreground",
+                    )}
+                  >
+                    {intl.formatMessage({ id: priorityLabelKey(priority) })}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -199,10 +268,7 @@ export function PaperclipCreateTaskDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {intl.formatMessage({ id: "common.cancel" })}
           </Button>
-          <Button
-            disabled={!state.title.trim() || submitting || (autoDispatch && !dispatcher)}
-            onClick={onSubmit}
-          >
+          <Button disabled={!canSubmit} onClick={onSubmit}>
             {submitting ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
             {intl.formatMessage({ id: "paperclip.form.submit" })}
           </Button>

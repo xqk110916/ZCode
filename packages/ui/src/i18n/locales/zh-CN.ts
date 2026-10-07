@@ -6533,6 +6533,10 @@ const zhCN: Record<string, string> = {
   "paperclip.form.assignee": "指派给",
   "paperclip.form.assigneeAny": "不指派",
   "paperclip.form.assigneeAuto": "主 Agent 自动分派",
+  "paperclip.form.assigneeAutoBy": "由 {name} 评估任务规模并分派",
+  "paperclip.form.viewDirective": "查看将附加的分派指令",
+  "paperclip.toast.created": "任务已创建",
+  "paperclip.toast.createdAuto": "任务已创建，已交给 {name} 评估分派",
   "paperclip.form.dispatchDirectiveHint":
     "自动分派模式下，提交时会随描述附加分派指令（由主 Agent 评估：单个终端 agent 直接处理，或拆解为子任务分派）。",
   "paperclip.form.dispatcherMissing": "尚无主 Agent（role=ceo）。",

@@ -2,7 +2,8 @@
  * Paperclip 面板的展示子组件：agent 卡片与任务行。
  * 纯投影展示，不含数据获取（数据在 usePaperclip）。
  */
-import { Bot, CircleCheck, Settings2, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { Bot, ChevronDown, CircleCheck, Settings2, Sparkles } from "lucide-react";
 import type {
   PaperclipAgent,
   PaperclipIssue,
@@ -106,9 +107,12 @@ export function PaperclipAgentCard({
   const status = agent.status ? agentStatusPresentation(agent.status) : null;
   const isDispatcher = agent.role === "ceo";
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-surface p-4">
+    // 页面内容区无更外层圆角容器，卡片按容器层级从 rounded-xl 起（DESIGN.md Radius）。
+    <div className="flex flex-col gap-2 rounded-xl border border-card-border bg-card p-4 transition-colors hover:border-border-hover">
       <div className="flex items-center gap-2">
-        <Bot className="size-4 shrink-0 text-foreground-subtle" />
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-accent">
+          <Bot className="size-4 text-foreground-subtle" />
+        </span>
         <span className="truncate text-ui-base font-medium text-foreground">
           {agentDisplayName(agent)}
         </span>
@@ -143,7 +147,7 @@ export function PaperclipAgentCard({
           </Badge>
         ) : null}
         {agent.model ? (
-          <Badge variant="outline" className="text-ui-sm">
+          <Badge variant="outline" className="font-mono text-ui-sm">
             {agent.model}
           </Badge>
         ) : null}
@@ -172,40 +176,86 @@ export function PaperclipIssueRow({
   onMarkDone: () => void;
 }) {
   const { intl } = useZCodeIntl();
+  const [expanded, setExpanded] = useState(false);
+  const hasDetail = Boolean(issue.description && issue.description.trim());
   return (
-    <li className="flex flex-wrap items-center gap-3 rounded-lg border border-border-subtle bg-surface px-4 py-3">
-      <Badge variant="secondary" className={cn("shrink-0", statusBadgeClass(issue.status))}>
-        {intl.formatMessage({ id: statusLabelKey(issue.status) })}
-      </Badge>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex min-w-0 items-center gap-2">
-          {issue.identifier ? (
-            <span className="shrink-0 font-mono text-ui-sm text-foreground-subtle">
-              {issue.identifier}
-            </span>
-          ) : null}
-          <span className="truncate text-ui-base text-foreground">{issue.title}</span>
-        </span>
-        <span className="truncate text-ui-sm text-foreground-subtlest">
-          {[
-            agentName ?? intl.formatMessage({ id: "paperclip.issues.unassigned" }),
-            formatTimestamp(issue.updatedAt ?? issue.createdAt, locale),
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </span>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <Badge variant="secondary" className={cn("text-ui-sm", priorityBadgeClass(issue.priority))}>
-          {intl.formatMessage({ id: priorityLabelKey(issue.priority) })}
+    <li className="flex flex-col rounded-xl border border-card-border bg-card transition-colors hover:border-border-hover">
+      <div
+        role={hasDetail ? "button" : undefined}
+        tabIndex={hasDetail ? 0 : undefined}
+        aria-expanded={hasDetail ? expanded : undefined}
+        onClick={hasDetail ? () => setExpanded((value) => !value) : undefined}
+        onKeyDown={
+          hasDetail
+            ? (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setExpanded((value) => !value);
+                }
+              }
+            : undefined
+        }
+        className={cn(
+          "flex flex-wrap items-center gap-3 px-4 py-3",
+          hasDetail && "cursor-pointer",
+        )}
+      >
+        <Badge variant="secondary" className={cn("shrink-0", statusBadgeClass(issue.status))}>
+          {intl.formatMessage({ id: statusLabelKey(issue.status) })}
         </Badge>
-        {issue.status !== "done" && issue.status !== "cancelled" ? (
-          <Button variant="ghost" size="sm" onClick={onMarkDone}>
-            <CircleCheck className="size-4" />
-            {intl.formatMessage({ id: "paperclip.issues.markDone" })}
-          </Button>
-        ) : null}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex min-w-0 items-center gap-2">
+            {issue.identifier ? (
+              <span className="shrink-0 font-mono text-ui-sm text-foreground-subtle">
+                {issue.identifier}
+              </span>
+            ) : null}
+            <span className="truncate text-ui-base text-foreground">{issue.title}</span>
+          </span>
+          <span className="truncate text-ui-sm text-foreground-subtlest">
+            {[
+              agentName ?? intl.formatMessage({ id: "paperclip.issues.unassigned" }),
+              formatTimestamp(issue.updatedAt ?? issue.createdAt, locale),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge variant="secondary" className={cn("text-ui-sm", priorityBadgeClass(issue.priority))}>
+            {intl.formatMessage({ id: priorityLabelKey(issue.priority) })}
+          </Badge>
+          {issue.status !== "done" && issue.status !== "cancelled" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(event) => {
+                // 行点击是展开详情；完成按钮独立动作，不随行触发。
+                event.stopPropagation();
+                onMarkDone();
+              }}
+            >
+              <CircleCheck className="size-4" />
+              {intl.formatMessage({ id: "paperclip.issues.markDone" })}
+            </Button>
+          ) : null}
+          {hasDetail ? (
+            <ChevronDown
+              className={cn(
+                "size-4 shrink-0 text-foreground-subtlest transition-transform",
+                expanded && "rotate-180",
+              )}
+            />
+          ) : null}
+        </div>
       </div>
+      {hasDetail && expanded ? (
+        <div className="border-t border-border-subtle px-4 py-3">
+          <p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-ui-base text-foreground-subtle">
+            {issue.description}
+          </p>
+        </div>
+      ) : null}
     </li>
   );
 }

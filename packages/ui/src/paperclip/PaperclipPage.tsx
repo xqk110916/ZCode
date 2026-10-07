@@ -9,10 +9,12 @@ import { CircleCheck, CircleDashed, Loader2, Plus, RefreshCw, Settings2 } from "
 import type { PaperclipAgent, PaperclipIssue, PaperclipIssueStatus } from "@zcode/shared";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
+import { toast } from "@/components/ui/toast.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
 import { usePaperclip } from "@/paperclip/usePaperclip.js";
 import {
+  agentDisplayName,
   PaperclipAgentCard,
   PaperclipIssueRow,
   findAgentName,
@@ -55,6 +57,11 @@ export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }
   const [submitting, setSubmitting] = useState(false);
   const [configAgent, setConfigAgent] = useState<PaperclipAgent | null>(null);
   const [ensuringDispatcher, setEnsuringDispatcher] = useState(false);
+
+  const openIssueCount = useMemo(
+    () => paperclip.issues.filter((issue) => !SETTLED_STATUSES.has(issue.status)).length,
+    [paperclip.issues],
+  );
 
   /** 打开创建对话框：dispatcher 存在时默认「主 Agent 自动分派」。 */
   function openCreateDialog() {
@@ -115,6 +122,15 @@ export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }
     if (ok) {
       setCreateOpen(false);
       setCreateState(EMPTY_CREATE_DIALOG_STATE);
+      // 创建成功的轻反馈：自动分派时说明交给谁调度，手动指派时说明唤醒谁。
+      toast(
+        autoDispatch
+          ? intl.formatMessage(
+              { id: "paperclip.toast.createdAuto" },
+              { name: agentDisplayName(dispatcher) },
+            )
+          : intl.formatMessage({ id: "paperclip.toast.created" }),
+      );
     }
   }
 
@@ -208,8 +224,11 @@ export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }
 
       {/* Agent 列表 */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-ui-lg font-semibold text-foreground">
+        <h2 className="flex items-center gap-2 text-ui-lg font-semibold text-foreground">
           {intl.formatMessage({ id: "paperclip.agents.title" })}
+          <span className="font-mono text-ui-sm font-normal text-foreground-subtlest">
+            {paperclip.agents.length}
+          </span>
         </h2>
         {paperclip.agents.length === 0 ? (
           paperclip.loadingIssues ? (
@@ -239,8 +258,11 @@ export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }
       {/* 任务列表 */}
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-ui-lg font-semibold text-foreground">
+          <h2 className="flex items-center gap-2 text-ui-lg font-semibold text-foreground">
             {intl.formatMessage({ id: "paperclip.issues.title" })}
+            <span className="font-mono text-ui-sm font-normal text-foreground-subtlest">
+              {openIssueCount}
+            </span>
           </h2>
           <div className="flex flex-wrap gap-1">
             {STATUS_FILTERS.map((status) => {

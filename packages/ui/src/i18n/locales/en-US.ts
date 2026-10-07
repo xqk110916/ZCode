@@ -6858,6 +6858,10 @@ const enUS: Record<string, string> = {
   "paperclip.form.assignee": "Assign to",
   "paperclip.form.assigneeAny": "Unassigned",
   "paperclip.form.assigneeAuto": "Auto-dispatch (lead agent)",
+  "paperclip.form.assigneeAutoBy": "{name} will assess the task and dispatch",
+  "paperclip.form.viewDirective": "View the dispatch directive to be appended",
+  "paperclip.toast.created": "Task created",
+  "paperclip.toast.createdAuto": "Task created — handed to {name} for dispatch",
   "paperclip.form.dispatchDirectiveHint":
     "In auto-dispatch mode, a dispatch directive is appended to the description on submit (the lead agent decides: handle with a single terminal agent, or split into subtasks).",
   "paperclip.form.dispatcherMissing": "No lead agent (role=ceo) yet.",
