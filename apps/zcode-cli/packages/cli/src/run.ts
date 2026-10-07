@@ -24,6 +24,7 @@ import { isDwfChildInvocation, runDwfChildCommand } from "./dwf-child-command.js
 import { runPrompt } from "./prompt-command.js";
 import { runPluginsCommand, type PluginsCommandFlags } from "./plugins-command.js";
 import { runSkillsCommand } from "./skills-command.js";
+import { runSendCommand } from "./send-command.js";
 import { runTuiCommand } from "./tui-command.js";
 import type {
   CliPermissionMode,
@@ -308,6 +309,11 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
 
   if (ctx.argv[0] === "hooks") {
     return await runHooksCommand(ctx, deps, version);
+  }
+
+  // send 自带 --session/--url/--token 选项，须在全局严格 parseArgs 之前接管。
+  if (ctx.argv[0] === "send") {
+    return await runSendCommand(ctx);
   }
 
   let parsed: ReturnType<typeof parseGlobalArgs>;

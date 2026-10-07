@@ -40,6 +40,7 @@ import {
 } from "@zcode/shared";
 import { connectRemote, createRemoteBackend, type RemoteConnection } from "./remote/index.js";
 import { createHostCapabilityStore } from "./hostCapability.js";
+import { registerLocalSessionSendRoutes } from "./localSessionSend.js";
 
 function wrapWebSocket(ws: WebSocket): ISocket {
   const onData = new Emitter<VSBuffer>();
@@ -319,6 +320,9 @@ export function createHttpServer(
 
   app.get("/api/server-info", (c) => c.json(createServerInfo(options)));
   app.post("/api/rpc-host-capability", (c) => c.json(hostCapabilities.issue()));
+  registerLocalSessionSendRoutes(app, services, {
+    getWorkspaces: () => resolveServerWorkspaces(options),
+  });
 
   // 普通 `/ws` 永远是 terminal-client；浏览器/任意客户端设置旧 mode header
   // 都不能再把自己提升为 trusted host。

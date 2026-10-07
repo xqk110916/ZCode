@@ -10,7 +10,7 @@
 
 #### 本机会话消息投递（local session send）
 
-- 新增 `zcode send "<消息>"` CLI 子命令与 zcode-server 三个 HTTP 端点（`POST /api/local-send`、`GET|POST /api/active-session`）：同一台机器上任意终端/脚本可向 Web 客户端当前活跃会话投递消息，语义等同用户亲自输入（空闲开新轮、忙碌排队、transcript 为普通用户消息）；显式 `--session` 可指定目标，server 重启后经任务索引预热仍可投递。
+- 新增 `zcode send "<消息>"` CLI 子命令与 zcode-server 三个 HTTP 端点（`POST /api/local-send`、`GET|POST /api/active-session`）：同一台机器上任意终端/脚本可向 Web 客户端当前活跃会话投递消息，语义等同用户亲自输入（空闲开新轮、忙碌排队、transcript 为普通用户消息）；显式 `--session` 可指定目标，投递前服务端自动预热任务索引并 resume 冷会话（server 重启后或会话从未打开过也可投递）。
 - Web 客户端在活跃会话切换时自动上报目标（`syncActiveTaskSession` 从桌面专属扩展为两端生效，桌面端行为不变）。
 - 对接文档：`docs/session-send-api.md`（供其他 agent/脚本集成）；行为规范：`specs/server/local-session-send.md`。桌面端接收链路为阶段二，未包含在本批改动中。
 

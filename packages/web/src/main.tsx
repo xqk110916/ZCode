@@ -289,7 +289,15 @@ function createWebPlatform(): IPlatformService {
     syncWindowTabs: () => {},
     // Web 端没有宿主层 Dock / 任务栏徽标，保持空实现以兼容统一平台接口
     syncWindowUnreadCount: () => {},
-    syncActiveTaskSession: () => {},
+    // Web 端没有宿主层焦点映射，改为上报给 zcode-server，供本机 /api/local-send
+    // 解析默认目标会话；best-effort，失败不打扰主流程。
+    syncActiveTaskSession: (sessionId) => {
+      void fetch("/api/active-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      }).catch(() => {});
+    },
     onFocusTab: () => () => {},
     onNewTab: () => () => {},
     onCloseActiveContextRequest: () => () => {},

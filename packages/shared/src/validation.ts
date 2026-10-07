@@ -99,6 +99,17 @@ export const remoteTargetSchema = z.discriminatedUnion("kind", [
   dockerConnectOptionsSchema,
 ]);
 
+/** local-send：客户端上报当前活跃会话；null 表示当前无活跃会话（specs/server/local-session-send.md）。 */
+export const activeSessionReportSchema = z.object({
+  sessionId: nonEmptyStringSchema.nullable(),
+});
+
+/** local-send：本机外部进程向指定/当前活跃会话投递一条用户消息。 */
+export const localSendSchema = z.object({
+  content: z.string().min(1).max(100_000),
+  sessionId: nonEmptyStringSchema.optional(),
+});
+
 export const helloMessageSchema = z.object({
   type: z.literal("zcode-hello"),
   version: z.string(),

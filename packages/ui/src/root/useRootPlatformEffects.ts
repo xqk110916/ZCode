@@ -578,7 +578,8 @@ export function useRootPlatformEffects({
     activeTabCandidate && isWorkspaceTab(activeTabCandidate) ? activeTabCandidate : undefined;
   const lastSyncedSessionIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (!isDesktop) return;
+    // 两端都上报：desktop 走 main 进程焦点映射，web 经 platform 实现投递给
+    // zcode-server /api/active-session，供本机 local-send 解析默认目标会话。
     const workspacePath = activeTab?.workspacePath;
     const workspaceIdentity = activeTab?.workspaceIdentity;
     const syncActiveSession = (): void => {
@@ -592,5 +593,5 @@ export function useRootPlatformEffects({
     };
     syncActiveSession();
     return useZCodeSessionStore.subscribe(syncActiveSession);
-  }, [activeTab, activeTabId, isDesktop, platform]);
+  }, [activeTab, activeTabId, platform]);
 }

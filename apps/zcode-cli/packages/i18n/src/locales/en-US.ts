@@ -21,6 +21,7 @@ Commands:
   login [zai|bigmodel]  Sign in through browser authorization
   logout     Remove the shared Z.AI login credentials
   plugins    Manage plugins and marketplaces (\`plugins list|install|uninstall|enable|disable|update|validate|marketplace ...\`; alias: plugin)
+  send <message>  Send a message to the current active session of a local zcode-server (\`send "hi" --session <id>\`)
   skills     List local skills (\`skills list\`)
   tui        Open the terminal UI
   version    Print the CLI version
