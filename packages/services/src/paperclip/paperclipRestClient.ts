@@ -7,12 +7,14 @@ import {
   paperclipAgentSchema,
   paperclipCompanySchema,
   paperclipIssueSchema,
+  paperclipProjectSchema,
   type PaperclipAdapterModel,
   type PaperclipAgent,
   type PaperclipCompany,
   type PaperclipCreateIssueInput,
   type PaperclipIssue,
   type PaperclipIssueFilter,
+  type PaperclipProject,
   type PaperclipUpdateAgentInput,
   type PaperclipUpdateIssueInput,
 } from "@zcode/shared";
@@ -47,6 +49,13 @@ export interface PaperclipRestClient {
     companyId: string,
     input: { name: string; adapterType: string; role?: string },
   ): Promise<PaperclipAgent>;
+  /** 项目列表（任务工作区载体）。 */
+  listProjects(companyId: string): Promise<PaperclipProject[]>;
+  /** 创建绑定本地路径工作区的项目（sourceType=local_path）。 */
+  createProject(
+    companyId: string,
+    input: { name: string; cwd: string },
+  ): Promise<PaperclipProject>;
 }
 
 interface PaperclipRestClientDeps {
@@ -196,6 +205,9 @@ export function createPaperclipRestClient(deps: PaperclipRestClientDeps): Paperc
     updateAgent: (agentId, patch) =>
       request("PATCH", `/agents/${encodeURIComponent(agentId)}`, {
         body: {
+          ...(patch.name === undefined || patch.name.trim() === ""
+            ? {}
+            : { name: patch.name.trim() }),
           adapterConfig: {
             ...(patch.model === undefined ? {} : { model: patch.model }),
             ...(patch.effort === undefined ? {} : { effort: patch.effort }),
@@ -211,6 +223,25 @@ export function createPaperclipRestClient(deps: PaperclipRestClientDeps): Paperc
           ...(input.role === undefined ? {} : { role: input.role }),
         },
         parse: (raw) => paperclipAgentSchema.parse(raw),
+      }),
+    listProjects: (companyId) =>
+      request("GET", `/companies/${encodeURIComponent(companyId)}/projects`, {
+        parse: (raw) => {
+          const list = Array.isArray(raw) ? raw : arrayFromEnvelope(raw);
+          return list.map((entry) => paperclipProjectSchema.parse(entry));
+        },
+      }),
+    createProject: (companyId, input) =>
+      request("POST", `/companies/${encodeURIComponent(companyId)}/projects`, {
+        body: {
+          name: input.name,
+          workspace: {
+            sourceType: "local_path",
+            cwd: input.cwd,
+            isPrimary: true,
+          },
+        },
+        parse: (raw) => paperclipProjectSchema.parse(raw),
       }),
   };
 }

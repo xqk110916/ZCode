@@ -18,6 +18,8 @@ import type {
   PaperclipIssue,
   PaperclipIssueEvent,
   PaperclipIssueStatus,
+  PaperclipLocalAdapterCandidate,
+  PaperclipProject,
   PaperclipUpdateAgentInput,
 } from "@zcode/shared";
 
@@ -40,6 +42,16 @@ export interface UsePaperclipState {
   updateAgent: (agentId: string, patch: PaperclipUpdateAgentInput) => Promise<boolean>;
   /** 确保 dispatcher（role=ceo）存在；成功后刷新 agent 列表并返回。 */
   ensureDispatcher: () => Promise<boolean>;
+  /** 创建 agent（「添加本地 agent」入口）；成功后并入本地列表。 */
+  createAgent: (input: { name: string; adapterType: string; role?: string }) => Promise<boolean>;
+  /** 检测本机 CLI → local adapter 候选（懒加载缓存一次）。 */
+  detectLocalAgentAdapters: () => Promise<PaperclipLocalAdapterCandidate[]>;
+  /** 从本机 Claude Code 第三方网关发现真实模型清单（无配置返回空）。 */
+  discoverClaudeModels: () => Promise<PaperclipAdapterModel[]>;
+  /** Paperclip 项目列表（任务工作区载体；随 refresh 一并拉取）。 */
+  projects: PaperclipProject[];
+  /** 确保绑定指定本地路径的项目存在（「当前 ZCode 工作区」选项的实现）。 */
+  ensureProjectForWorkspace: (input: { name: string; cwd: string }) => Promise<PaperclipProject | null>;
   /** 按 adapterType 拉可选模型（懒加载缓存）。 */
   loadAdapterModels: (adapterType: string) => Promise<PaperclipAdapterModel[]>;
 }
@@ -50,6 +62,7 @@ export function usePaperclip(): UsePaperclipState {
 
   const [connection, setConnection] = useState<PaperclipConnectionStateSnapshot | null>(null);
   const [agents, setAgents] = useState<PaperclipAgent[]>([]);
+  const [projects, setProjects] = useState<PaperclipProject[]>([]);
   const [issues, setIssues] = useState<PaperclipIssue[]>([]);
   const [loadingIssues, setLoadingIssues] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -102,13 +115,15 @@ export function usePaperclip(): UsePaperclipState {
         setIssues([]);
         return;
       }
-      const [nextAgents, nextIssues] = await Promise.all([
+      const [nextAgents, nextIssues, nextProjects] = await Promise.all([
         paperclipService.listAgents(),
         paperclipService.listIssues(),
+        paperclipService.listProjects().catch(() => [] as PaperclipProject[]),
       ]);
       if (issuesRequestEpochRef.current !== epoch) return;
       setAgents(nextAgents);
       setIssues(nextIssues);
+      setProjects(nextProjects);
     } catch (error) {
       if (issuesRequestEpochRef.current !== epoch) return;
       logger.warn("paperclip panel refresh failed", { error });
@@ -211,6 +226,66 @@ export function usePaperclip(): UsePaperclipState {
     }
   }, [paperclipService]);
 
+  const createAgent = useCallback(
+    async (input: { name: string; adapterType: string; role?: string }) => {
+      if (!paperclipService) return false;
+      setActionError(null);
+      try {
+        const created = await paperclipService.createAgent(input);
+        setAgents((current) =>
+          current.some((agent) => agent.id === created.id)
+            ? current.map((agent) => (agent.id === created.id ? created : agent))
+            : [...current, created],
+        );
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setActionError(message);
+        return false;
+      }
+    },
+    [paperclipService],
+  );
+
+  const localAdaptersCacheRef = useRef<PaperclipLocalAdapterCandidate[] | null>(null);
+  const detectLocalAgentAdapters = useCallback(async () => {
+    if (localAdaptersCacheRef.current) return localAdaptersCacheRef.current;
+    if (!paperclipService) return [];
+    const candidates = await paperclipService.detectLocalAgentAdapters();
+    localAdaptersCacheRef.current = candidates;
+    return candidates;
+  }, [paperclipService]);
+
+  const discoverClaudeModels = useCallback(async () => {
+    if (!paperclipService) return [];
+    try {
+      return await paperclipService.discoverClaudeModels();
+    } catch {
+      return [];
+    }
+  }, [paperclipService]);
+
+  const ensureProjectForWorkspace = useCallback(
+    async (input: { name: string; cwd: string }) => {
+      if (!paperclipService) return null;
+      setActionError(null);
+      try {
+        const project = await paperclipService.ensureProjectForWorkspace(input);
+        setProjects((current) =>
+          current.some((entry) => entry.id === project.id)
+            ? current.map((entry) => (entry.id === project.id ? project : entry))
+            : [...current, project],
+        );
+        return project;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setActionError(message);
+        return null;
+      }
+    },
+    [paperclipService],
+  );
+
   const adapterModelsCacheRef = useRef(new Map<string, PaperclipAdapterModel[]>());
   const adapterModelsInFlightRef = useRef(new Map<string, Promise<PaperclipAdapterModel[]>>());
   const loadAdapterModels = useCallback(
@@ -255,6 +330,11 @@ export function usePaperclip(): UsePaperclipState {
       markDone,
       updateAgent,
       ensureDispatcher,
+      createAgent,
+      detectLocalAgentAdapters,
+      discoverClaudeModels,
+      projects,
+      ensureProjectForWorkspace,
       loadAdapterModels,
     }),
     [
@@ -271,6 +351,11 @@ export function usePaperclip(): UsePaperclipState {
       markDone,
       updateAgent,
       ensureDispatcher,
+      createAgent,
+      detectLocalAgentAdapters,
+      discoverClaudeModels,
+      projects,
+      ensureProjectForWorkspace,
       loadAdapterModels,
     ],
   );

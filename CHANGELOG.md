@@ -23,6 +23,10 @@
 - **面板内切换模型**：agent 卡片新增配置入口，弹窗内按该 agent 的 adapter 类型拉取可选模型并切换模型/推理力度（`PATCH /api/agents/{id}`，merge 语义，改动计入 Paperclip 配置修订历史）；effort 与模型不匹配被拒时弹窗如实展示原因。
 - **主 Agent 自动分派**：创建任务对话框新增「主 Agent 自动分派」（公司内 `role=ceo` 的 agent 为调度负责人，存在时默认选中，缺失时可一键创建，默认 `claude_local` 复用本机 CLI 登录态）。分派决策由主 Agent 的 LLM 完成——评估任务规模后选择单个终端 agent 直接处理（允许其内部多 agent 协同）或拆解为多个子任务分别指派；ZCode 只在提交时附加分派指令模板（对话框中有提示，用户可见可预期），不做客户端侧判断。实测：Dispatcher 对「实现+自测」小任务判断为单 agent 即可，创建单个子任务指派给执行 agent，子任务完成后父任务经依赖自动汇总为 done。
 - **面板与创建交互打磨**：卡片/任务行按设计规范改用 `rounded-xl` 容器层级与 `bg-card` 表面、hover 边框反馈、agent 头像底板与模型等宽徽章；任务行点击可展开描述全文（键盘可达，完成按钮独立动作不再联动展开）；创建对话框指派改为可视化选项组（自动分派置顶、显示调度人、agent 带 adapter 标识、可展开预览将附加的分派指令）、优先级改为分段选择、支持 ⌘/Ctrl+Enter 提交；创建成功 toast 反馈（自动分派时注明交给谁调度）；区标题带 agent/未结任务计数。
+- **任务工作区绑定**：创建任务可选绑定 Paperclip 项目——「当前工作区」把当前 ZCode workspace 注册为 `local_path` 项目（按路径幂等，首次自动创建，已注册时默认选中），任务执行在项目工作区的 git worktree 中进行；也可选已有项目或不绑定。
+- **本地 agent 注册**：面板新增「添加 agent」入口，探测本机已安装的 CLI（claude/kimi/grok/codex/gemini/opencode）一键注册为对应 local adapter 的 agent，复用 CLI 已有登录态；修复探测误报（`execFileSync` stdio ignore 时返回值恒为 null，改按是否抛错判定）。
+- **第三方模型发现**：agent 配置弹窗的模型清单增加本机来源——读 Claude Code 的第三方网关配置（`~/.claude/settings.json`）直连 `/v1/models` 拉取真实可用模型（实测 11 个 GLM 模型，「本机网关」分组置顶展示），凭证不落日志；另支持手动输入模型 ID 优先生效。配置弹窗同时支持修改 agent 名称。
+- **团队呈现优化**：主 Agent 置顶并以 info 描边强调；adapter 徽章改用各模型自身图标（Claude 星芒 / Gemini 四角星 / Grok 环箭头 / ChatGPT 花结 / Kimi 新月 / OpenCode）并去掉 `local` 后缀；agent 状态徽章带状态圆点并补全空闲/错误语义色；卡片底部按角色说明职责。修复 Radix Select 空值选项与 button 嵌套两类渲染报错。
 
 #### 分组 / 项目独立数据源（`custom-resources.sqlite`）
 

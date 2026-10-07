@@ -111,8 +111,18 @@ export type PaperclipEffort = (typeof PAPERCLIP_EFFORTS)[number];
 
 /** 更新 agent 配置（PATCH /api/agents/{id}，adapterConfig 为 merge 语义）。 */
 export interface PaperclipUpdateAgentInput {
+  /** agent 显示名（任务指派、dispatcher 展示用）。 */
+  name?: string;
   model?: string;
   effort?: PaperclipEffort;
+}
+
+/** 本机 CLI 与 Paperclip local adapter 的候选映射（面板「添加本地 agent」用）。 */
+export interface PaperclipLocalAdapterCandidate {
+  adapterType: string;
+  cliName: string;
+  /** PATH 上是否可见；不可见时仍可创建，但该 agent 执行会失败——UI 需标注。 */
+  available: boolean;
 }
 
 export const paperclipIssueSchema = z
@@ -133,6 +143,21 @@ export const paperclipIssueSchema = z
   })
   .passthrough();
 export type PaperclipIssue = z.infer<typeof paperclipIssueSchema>;
+
+/** Paperclip 项目（任务的工作区载体；codebase.localFolder 为本地路径）。 */
+export const paperclipProjectSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().optional().catch(""),
+    codebase: z
+      .object({
+        localFolder: z.string().nullish().catch(null),
+      })
+      .nullish()
+      .catch({}),
+  })
+  .passthrough();
+export type PaperclipProject = z.infer<typeof paperclipProjectSchema>;
 
 // ---------------------------------------------------------------------------
 // 连接状态与事件

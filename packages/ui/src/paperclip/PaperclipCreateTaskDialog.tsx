@@ -4,12 +4,14 @@
  * 选择；支持 ⌘/Ctrl+Enter 提交。自动分派（DISPATCH_ASSIGNEE 特殊值）提交时由
  * Page 侧把分派指令模板拼进 description 并指派给 dispatcher（role=ceo）。
  */
-import { Loader2, Plus, Sparkles, UserRound } from "lucide-react";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible.js";
+import { FolderOpen, Loader2, Plus, Sparkles, UserRound } from "lucide-react";
+import type { ReactNode } from "react";
 import type {
   PaperclipAgent,
   PaperclipIssuePriority,
+  PaperclipProject,
 } from "@zcode/shared";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible.js";
 import { Button } from "@/components/ui/button.js";
 import {
   Dialog,
@@ -28,6 +30,9 @@ import { agentDisplayName, priorityLabelKey } from "@/paperclip/paperclipViews.j
 
 /** assigneeAgentId 的特殊值：主 Agent 自动分派。 */
 export const PAPERCLIP_DISPATCH_ASSIGNEE = "__paperclip_auto_dispatch__";
+
+/** projectId 的特殊值：绑定当前 ZCode 工作区（提交时按需创建 Paperclip 项目）。 */
+export const PAPERCLIP_CURRENT_WORKSPACE_PROJECT = "__paperclip_current_workspace__";
 
 /** 分派指令模板：引导 dispatcher 的 LLM 做单/多 agent 判断（见 spec 自动分派一节）。 */
 export const PAPERCLIP_DISPATCH_DIRECTIVE = [
@@ -50,6 +55,8 @@ export interface PaperclipCreateDialogState {
   priority: PaperclipIssuePriority;
   /** "" 不指派 / DISPATCH_ASSIGNEE 自动分派 / 具体 agent id。 */
   assigneeAgentId: string;
+  /** "" 不绑定 / CURRENT_WORKSPACE 当前工作区（提交时按需建项目）/ 具体 project id。 */
+  projectId: string;
 }
 
 export const EMPTY_CREATE_DIALOG_STATE: PaperclipCreateDialogState = {
@@ -57,6 +64,7 @@ export const EMPTY_CREATE_DIALOG_STATE: PaperclipCreateDialogState = {
   description: "",
   priority: "medium",
   assigneeAgentId: "",
+  projectId: "",
 };
 
 const PRIORITIES: ReadonlyArray<PaperclipIssuePriority> = ["urgent", "high", "medium", "low"];
@@ -65,6 +73,9 @@ export function PaperclipCreateTaskDialog({
   open,
   agents,
   dispatcher,
+  projects,
+  workspacePath,
+  currentWorkspaceProjectId,
   submitting,
   ensuringDispatcher,
   state,
@@ -76,6 +87,11 @@ export function PaperclipCreateTaskDialog({
   open: boolean;
   agents: PaperclipAgent[];
   dispatcher: PaperclipAgent | null;
+  projects: PaperclipProject[];
+  /** 当前 ZCode 工作区绝对路径（「当前工作区」选项的 cwd）。 */
+  workspacePath: string;
+  /** 已绑定当前工作区的 Paperclip 项目 id（无则 null，选中时提交侧按需创建）。 */
+  currentWorkspaceProjectId: string | null;
   submitting: boolean;
   ensuringDispatcher: boolean;
   state: PaperclipCreateDialogState;
@@ -86,9 +102,41 @@ export function PaperclipCreateTaskDialog({
 }) {
   const { intl } = useZCodeIntl();
   const autoDispatch = state.assigneeAgentId === PAPERCLIP_DISPATCH_ASSIGNEE;
+  /** 「当前工作区」选项的实际值：已有对应项目用其 id，否则用待创建哨兵值。 */
+  const currentWorkspaceValue = currentWorkspaceProjectId ?? PAPERCLIP_CURRENT_WORKSPACE_PROJECT;
 
   function selectAssignee(value: string) {
     onStateChange({ ...state, assigneeAgentId: value });
+  }
+
+  /**
+   * 选项行（radiogroup 内）。用 div 而不是 button：部分选项内嵌动作按钮，
+   * HTML 不允许 button 嵌套 button；键盘可达性由显式 onKeyDown 保证（Enter/Space）。
+   */
+  function renderOption(input: {
+    key: string;
+    selected: boolean;
+    onSelect: () => void;
+    children: ReactNode;
+  }) {
+    return (
+      <div
+        key={input.key}
+        role="radio"
+        aria-checked={input.selected}
+        tabIndex={0}
+        onClick={input.onSelect}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            input.onSelect();
+          }
+        }}
+        className={assigneeOptionClass(input.selected)}
+      >
+        {input.children}
+      </div>
+    );
   }
 
   const assigneeOptionClass = (selected: boolean) =>
@@ -147,79 +195,78 @@ export function PaperclipCreateTaskDialog({
           <div className="flex flex-col gap-1">
             <Label role="group">{intl.formatMessage({ id: "paperclip.form.assignee" })}</Label>
             <div role="radiogroup" aria-label={intl.formatMessage({ id: "paperclip.form.assignee" })} className="flex flex-col gap-1">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={autoDispatch}
-                onClick={() => selectAssignee(PAPERCLIP_DISPATCH_ASSIGNEE)}
-                className={assigneeOptionClass(autoDispatch)}
-              >
-                <Sparkles className="size-4 shrink-0 text-info" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">
-                    {intl.formatMessage({ id: "paperclip.form.assigneeAuto" })}
-                  </span>
-                  <span className="block truncate text-ui-sm text-foreground-subtlest">
-                    {dispatcher
-                      ? intl.formatMessage(
-                          { id: "paperclip.form.assigneeAutoBy" },
-                          { name: agentDisplayName(dispatcher) },
-                        )
-                      : intl.formatMessage({ id: "paperclip.form.dispatcherMissing" })}
-                  </span>
-                </span>
-                {autoDispatch && !dispatcher ? (
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    disabled={ensuringDispatcher}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onEnsureDispatcher();
-                    }}
-                  >
-                    {ensuringDispatcher ? (
-                      <Loader2 className="size-3.5 animate-spin" />
+              {renderOption({
+                key: "auto",
+                selected: autoDispatch,
+                onSelect: () => selectAssignee(PAPERCLIP_DISPATCH_ASSIGNEE),
+                children: (
+                  <>
+                    <Sparkles className="size-4 shrink-0 text-info" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">
+                        {intl.formatMessage({ id: "paperclip.form.assigneeAuto" })}
+                      </span>
+                      <span className="block truncate text-ui-sm text-foreground-subtlest">
+                        {dispatcher
+                          ? intl.formatMessage(
+                              { id: "paperclip.form.assigneeAutoBy" },
+                              { name: agentDisplayName(dispatcher) },
+                            )
+                          : intl.formatMessage({ id: "paperclip.form.dispatcherMissing" })}
+                      </span>
+                    </span>
+                    {autoDispatch && !dispatcher ? (
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        disabled={ensuringDispatcher}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onEnsureDispatcher();
+                        }}
+                      >
+                        {ensuringDispatcher ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : null}
+                        {intl.formatMessage({ id: "paperclip.form.createDispatcher" })}
+                      </Button>
                     ) : null}
-                    {intl.formatMessage({ id: "paperclip.form.createDispatcher" })}
-                  </Button>
-                ) : null}
-              </button>
+                  </>
+                ),
+              })}
               {agents
                 .filter((agent) => agent.id !== dispatcher?.id)
-                .map((agent) => {
-                  const selected = state.assigneeAgentId === agent.id;
-                  return (
-                    <button
-                      key={agent.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      onClick={() => selectAssignee(agent.id)}
-                      className={assigneeOptionClass(selected)}
-                    >
-                      <UserRound className="size-4 shrink-0 text-foreground-subtlest" />
-                      <span className="min-w-0 flex-1 truncate">{agentDisplayName(agent)}</span>
-                      {agent.adapterType ? (
-                        <span className="shrink-0 font-mono text-ui-sm text-foreground-subtlest">
-                          {agent.adapterType}
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              <button
-                type="button"
-                role="radio"
-                aria-checked={state.assigneeAgentId === ""}
-                onClick={() => selectAssignee("")}
-                className={assigneeOptionClass(state.assigneeAgentId === "")}
-              >
-                <UserRound className="size-4 shrink-0 text-foreground-subtlest" />
-                <span className="min-w-0 flex-1 truncate">
-                  {intl.formatMessage({ id: "paperclip.form.assigneeAny" })}
-                </span>
-              </button>
+                .map((agent) =>
+                  renderOption({
+                    key: agent.id,
+                    selected: state.assigneeAgentId === agent.id,
+                    onSelect: () => selectAssignee(agent.id),
+                    children: (
+                      <>
+                        <UserRound className="size-4 shrink-0 text-foreground-subtlest" />
+                        <span className="min-w-0 flex-1 truncate">{agentDisplayName(agent)}</span>
+                        {agent.adapterType ? (
+                          <span className="shrink-0 font-mono text-ui-sm text-foreground-subtlest">
+                            {agent.adapterType}
+                          </span>
+                        ) : null}
+                      </>
+                    ),
+                  }),
+                )}
+              {renderOption({
+                key: "none",
+                selected: state.assigneeAgentId === "",
+                onSelect: () => selectAssignee(""),
+                children: (
+                  <>
+                    <UserRound className="size-4 shrink-0 text-foreground-subtlest" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {intl.formatMessage({ id: "paperclip.form.assigneeAny" })}
+                    </span>
+                  </>
+                ),
+              })}
             </div>
             {autoDispatch ? (
               <Collapsible className="mt-1">
@@ -233,6 +280,78 @@ export function PaperclipCreateTaskDialog({
                 </CollapsibleContent>
               </Collapsible>
             ) : null}
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label>{intl.formatMessage({ id: "paperclip.form.workspace" })}</Label>
+            <div
+              role="radiogroup"
+              aria-label={intl.formatMessage({ id: "paperclip.form.workspace" })}
+              className="flex flex-col gap-1"
+            >
+              {renderOption({
+                key: "workspace-none",
+                selected: state.projectId === "",
+                onSelect: () => onStateChange({ ...state, projectId: "" }),
+                children: (
+                  <>
+                    <FolderOpen className="size-4 shrink-0 text-foreground-subtlest" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {intl.formatMessage({ id: "paperclip.form.workspaceNone" })}
+                    </span>
+                  </>
+                ),
+              })}
+              {workspacePath ? (
+                renderOption({
+                  key: "workspace-current",
+                  selected:
+                    state.projectId === currentWorkspaceValue ||
+                    state.projectId === PAPERCLIP_CURRENT_WORKSPACE_PROJECT,
+                  onSelect: () =>
+                    onStateChange({ ...state, projectId: currentWorkspaceValue }),
+                  children: (
+                    <>
+                      <FolderOpen className="size-4 shrink-0 text-info" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">
+                          {intl.formatMessage({ id: "paperclip.form.workspaceCurrent" })}
+                        </span>
+                        <span className="block truncate font-mono text-ui-sm text-foreground-subtlest">
+                          {workspacePath}
+                        </span>
+                      </span>
+                      {currentWorkspaceProjectId === null ? (
+                        <span className="shrink-0 text-ui-sm text-foreground-subtlest">
+                          {intl.formatMessage({ id: "paperclip.form.workspaceWillCreate" })}
+                        </span>
+                      ) : null}
+                    </>
+                  ),
+                })
+              ) : null}
+              {projects
+                .filter((project) => project.id !== currentWorkspaceProjectId)
+                .map((project) =>
+                  renderOption({
+                    key: project.id,
+                    selected: state.projectId === project.id,
+                    onSelect: () => onStateChange({ ...state, projectId: project.id }),
+                    children: (
+                      <>
+                        <FolderOpen className="size-4 shrink-0 text-foreground-subtlest" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{project.name}</span>
+                          {project.codebase?.localFolder ? (
+                            <span className="block truncate font-mono text-ui-sm text-foreground-subtlest">
+                              {project.codebase.localFolder}
+                            </span>
+                          ) : null}
+                        </span>
+                      </>
+                    ),
+                  }),
+                )}
+            </div>
           </div>
           <div className="flex flex-col gap-1">
             <Label>{intl.formatMessage({ id: "paperclip.form.priority" })}</Label>

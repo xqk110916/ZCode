@@ -14,6 +14,57 @@ import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
+import { resolveTheme } from "@/useTheme.js";
+import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
+// 模型自身图标集（paperclip 面板专用，勿与设置页 provider 厂商资产混用）：
+// Claude 星芒 / Gemini 四角星 / Grok 环箭头为用户提供素材；ChatGPT 图标即 Codex
+// 模型的图标；Kimi 新月为产品自身标（复用设置页资产）。
+import claudeBrandIcon from "@/assets/paperclip-brand-icons/claude.png";
+import geminiBrandIcon from "@/assets/paperclip-brand-icons/gemini.png";
+import grokBrandIcon from "@/assets/paperclip-brand-icons/grok.png";
+import chatgptBrandIcon from "@/assets/paperclip-brand-icons/chatgpt.png";
+import kimiLogo from "@/assets/provider-icons/model-provider-moonshot-kimi.png";
+import opencodeLight from "@/assets/provider-icons/model-provider-opencode-light.svg";
+import opencodeDark from "@/assets/provider-icons/model-provider-opencode-dark.svg";
+
+/** adapter → 模型自身图标（无映射的用 Bot 兜底）。 */
+export function PaperclipAdapterBrandIcon({
+  adapterType,
+  className,
+}: {
+  adapterType: string;
+  className?: string;
+}) {
+  const theme = useZCodeStoreWithDefault((state) => state.theme, "zai-dark");
+  const resolved = resolveTheme(theme);
+  const base = adapterType.replace(/_local$/, "");
+  const src =
+    base === "claude"
+      ? claudeBrandIcon
+      : base === "gemini"
+        ? geminiBrandIcon
+        : base === "grok"
+          ? grokBrandIcon
+          : base === "codex"
+            ? chatgptBrandIcon
+            : base === "kimi"
+              ? kimiLogo
+              : base === "opencode"
+                ? resolved === "dark"
+                  ? opencodeDark
+                  : opencodeLight
+                : null;
+  if (src === null) {
+    return <Bot className={className} />;
+  }
+  // rounded-sm 让 claude/chatgpt 这类满幅方形 app 图标与容器圆角协调；透明图标不受影响。
+  return <img src={src} alt="" aria-hidden className={cn("rounded-sm", className)} draggable={false} />;
+}
+
+/** adapter 展示名：local 形态去掉 _local 后缀（claude_local → claude）；其他形态保留全名以区分执行位置。 */
+export function formatAdapterLabel(adapterType: string): string {
+  return adapterType.replace(/_local$/, "");
+}
 
 export function statusLabelKey(status: PaperclipIssueStatus): string {
   return `paperclip.status.${status}`;
@@ -75,25 +126,50 @@ function priorityBadgeClass(priority: PaperclipIssuePriority): string {
   }
 }
 
-/** Paperclip agent 状态（active/paused 等）：已知值走 i18n 与语义色，未知值原样弱展示。 */
+/** Paperclip agent 状态：已知值走 i18n + 语义色 + 状态点；未知值原样弱展示。 */
 function agentStatusPresentation(status: string): {
   labelKey: string | null;
   className: string;
 } {
   switch (status) {
     case "active":
+    case "running":
       return {
         labelKey: "paperclip.agentStatus.active",
         className: "bg-success-subtle text-success",
+      };
+    case "idle":
+      return {
+        labelKey: "paperclip.agentStatus.idle",
+        className: "bg-surface-muted text-foreground-subtle",
       };
     case "paused":
       return {
         labelKey: "paperclip.agentStatus.paused",
         className: "bg-warning-subtle text-warning",
       };
+    case "error":
+      return {
+        labelKey: "paperclip.agentStatus.error",
+        className: "bg-danger-subtle text-danger",
+      };
     default:
       return { labelKey: null, className: "bg-surface-muted text-foreground-subtle" };
   }
+}
+
+/** 状态徽章：语义色 + 跟随文本色的状态圆点（不只靠颜色区分，可读性兜底）。 */
+function PaperclipAgentStatusBadge({ status }: { status: string }) {
+  const { intl } = useZCodeIntl();
+  const presentation = agentStatusPresentation(status);
+  return (
+    <Badge variant="secondary" className={cn("gap-1.5 text-ui-sm", presentation.className)}>
+      <span className="size-1.5 shrink-0 rounded-full bg-current" />
+      {presentation.labelKey
+        ? intl.formatMessage({ id: presentation.labelKey })
+        : (status ?? "")}
+    </Badge>
+  );
 }
 
 export function PaperclipAgentCard({
@@ -104,14 +180,25 @@ export function PaperclipAgentCard({
   onConfigure?: (agent: PaperclipAgent) => void;
 }) {
   const { intl } = useZCodeIntl();
-  const status = agent.status ? agentStatusPresentation(agent.status) : null;
   const isDispatcher = agent.role === "ceo";
+  const adapterType = agent.adapterType || "";
   return (
     // 页面内容区无更外层圆角容器，卡片按容器层级从 rounded-xl 起（DESIGN.md Radius）。
-    <div className="flex flex-col gap-2 rounded-xl border border-card-border bg-card p-4 transition-colors hover:border-border-hover">
+    // dispatcher（主 Agent）用 info 描边强调，配合列表置顶排序。
+    <div
+      className={cn(
+        "flex flex-col gap-2 rounded-xl border bg-card p-4 transition-colors",
+        isDispatcher
+          ? "border-info/40 hover:border-info/60"
+          : "border-card-border hover:border-border-hover",
+      )}
+    >
       <div className="flex items-center gap-2">
         <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-accent">
-          <Bot className="size-4 text-foreground-subtle" />
+          <PaperclipAdapterBrandIcon
+            adapterType={adapterType}
+            className="size-4 object-contain"
+          />
         </span>
         <span className="truncate text-ui-base font-medium text-foreground">
           {agentDisplayName(agent)}
@@ -141,9 +228,10 @@ export function PaperclipAgentCard({
             {intl.formatMessage({ id: "paperclip.agents.dispatcher" })}
           </Badge>
         ) : null}
-        {agent.adapterType ? (
-          <Badge variant="secondary" className="text-ui-sm">
-            {agent.adapterType}
+        {adapterType ? (
+          <Badge variant="secondary" className="gap-1 text-ui-sm">
+            <PaperclipAdapterBrandIcon adapterType={adapterType} className="size-3 object-contain" />
+            {formatAdapterLabel(adapterType)}
           </Badge>
         ) : null}
         {agent.model ? (
@@ -151,14 +239,12 @@ export function PaperclipAgentCard({
             {agent.model}
           </Badge>
         ) : null}
-        {status ? (
-          <Badge variant="secondary" className={cn("text-ui-sm", status.className)}>
-            {status.labelKey ? intl.formatMessage({ id: status.labelKey }) : (agent.status ?? "")}
-          </Badge>
-        ) : null}
+        {agent.status ? <PaperclipAgentStatusBadge status={agent.status} /> : null}
       </div>
       <p className="text-ui-sm text-foreground-subtlest">
-        {intl.formatMessage({ id: "paperclip.agents.managedExternally" })}
+        {isDispatcher
+          ? intl.formatMessage({ id: "paperclip.agents.roleDispatcherHint" })
+          : intl.formatMessage({ id: "paperclip.agents.roleWorkerHint" })}
       </p>
     </div>
   );

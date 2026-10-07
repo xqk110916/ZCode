@@ -5,7 +5,15 @@
  * 未连接时显示引导（去设置配置 server 地址）；polling 降级态由状态条与轮询兜底。
  */
 import { useMemo, useState } from "react";
-import { CircleCheck, CircleDashed, Loader2, Plus, RefreshCw, Settings2 } from "lucide-react";
+import {
+  CircleCheck,
+  CircleDashed,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Settings2,
+  UserRoundPlus,
+} from "lucide-react";
 import type { PaperclipAgent, PaperclipIssue, PaperclipIssueStatus } from "@zcode/shared";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
@@ -21,9 +29,11 @@ import {
   statusLabelKey,
 } from "@/paperclip/paperclipViews.js";
 import { PaperclipAgentConfigDialog } from "@/paperclip/PaperclipAgentConfigDialog.js";
+import { PaperclipAddAgentDialog } from "@/paperclip/PaperclipAddAgentDialog.js";
 import {
   buildDispatchDescription,
   EMPTY_CREATE_DIALOG_STATE,
+  PAPERCLIP_CURRENT_WORKSPACE_PROJECT,
   PAPERCLIP_DISPATCH_ASSIGNEE,
   PaperclipCreateTaskDialog,
   type PaperclipCreateDialogState,
@@ -47,7 +57,14 @@ function issueSortTimestamp(issue: PaperclipIssue): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function PaperclipPage({
+  onOpenSettings,
+  workspacePath,
+}: {
+  onOpenSettings: () => void;
+  /** 当前 ZCode 工作区绝对路径；创建任务可绑定为 Paperclip 项目工作区。 */
+  workspacePath: string;
+}) {
   const { intl, locale } = useZCodeIntl();
   const paperclip = usePaperclip();
   const [statusFilter, setStatusFilter] = useState<PaperclipIssueStatus | "all">("all");
@@ -57,19 +74,28 @@ export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }
   const [submitting, setSubmitting] = useState(false);
   const [configAgent, setConfigAgent] = useState<PaperclipAgent | null>(null);
   const [ensuringDispatcher, setEnsuringDispatcher] = useState(false);
+  const [addAgentOpen, setAddAgentOpen] = useState(false);
 
   const openIssueCount = useMemo(
     () => paperclip.issues.filter((issue) => !SETTLED_STATUSES.has(issue.status)).length,
     [paperclip.issues],
   );
 
-  /** 打开创建对话框：dispatcher 存在时默认「主 Agent 自动分派」。 */
+  const currentWorkspaceProjectId = useMemo(
+    () =>
+      paperclip.projects.find((project) => project.codebase?.localFolder === workspacePath)?.id ??
+      null,
+    [paperclip.projects, workspacePath],
+  );
+
+  /** 打开创建对话框：dispatcher 存在时默认「主 Agent 自动分派」；当前工作区已注册为
+   * Paperclip 项目时默认绑定它（贴合"在这个仓库干活"的直觉）。 */
   function openCreateDialog() {
-    if (paperclip.dispatcher) {
-      setCreateState({ ...EMPTY_CREATE_DIALOG_STATE, assigneeAgentId: PAPERCLIP_DISPATCH_ASSIGNEE });
-    } else {
-      setCreateState(EMPTY_CREATE_DIALOG_STATE);
-    }
+    setCreateState({
+      ...EMPTY_CREATE_DIALOG_STATE,
+      assigneeAgentId: paperclip.dispatcher ? PAPERCLIP_DISPATCH_ASSIGNEE : "",
+      projectId: currentWorkspaceProjectId ?? "",
+    });
     setCreateOpen(true);
   }
 
@@ -98,6 +124,20 @@ export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }
 
   async function submitCreate() {
     if (!createState.title.trim() || submitting) return;
+    // 「当前工作区」且尚未注册时，先确保 Paperclip 项目存在（local_path 工作区）。
+    let projectId = createState.projectId;
+    if (projectId === PAPERCLIP_CURRENT_WORKSPACE_PROJECT && workspacePath) {
+      const project = await paperclip.ensureProjectForWorkspace({
+        // 项目名取工作区目录名（Paperclip 项目重名可共存，按 cwd 幂等匹配）。
+        name: workspacePath.split("/").filter(Boolean).pop() ?? workspacePath,
+        cwd: workspacePath,
+      });
+      if (!project) {
+        // ensureProjectForWorkspace 已把原因写进 actionError；中止提交。
+        return;
+      }
+      projectId = project.id;
+    }
     setSubmitting(true);
     const dispatcher = paperclip.dispatcher;
     const autoDispatch =
@@ -111,6 +151,7 @@ export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }
           ? {}
           : { description: createState.description.trim() }),
       priority: createState.priority,
+      ...(projectId === "" ? {} : { projectId }),
       ...(autoDispatch
         ? { assigneeAgentId: dispatcher.id }
         : createState.assigneeAgentId === "" ||
@@ -224,12 +265,18 @@ export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }
 
       {/* Agent 列表 */}
       <section className="flex flex-col gap-3">
-        <h2 className="flex items-center gap-2 text-ui-lg font-semibold text-foreground">
-          {intl.formatMessage({ id: "paperclip.agents.title" })}
-          <span className="font-mono text-ui-sm font-normal text-foreground-subtlest">
-            {paperclip.agents.length}
-          </span>
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-ui-lg font-semibold text-foreground">
+            {intl.formatMessage({ id: "paperclip.agents.title" })}
+            <span className="font-mono text-ui-sm font-normal text-foreground-subtlest">
+              {paperclip.agents.length}
+            </span>
+          </h2>
+          <Button variant="outline" size="sm" onClick={() => setAddAgentOpen(true)}>
+            <UserRoundPlus className="size-4" />
+            {intl.formatMessage({ id: "paperclip.addAgent.open" })}
+          </Button>
+        </div>
         {paperclip.agents.length === 0 ? (
           paperclip.loadingIssues ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-busy>
@@ -238,19 +285,30 @@ export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }
               ))}
             </div>
           ) : (
-            <p className="text-ui-base text-foreground-subtle">
-              {intl.formatMessage({ id: "paperclip.agents.empty" })}
-            </p>
+            <div className="flex flex-col items-start gap-3">
+              <p className="text-ui-base text-foreground-subtle">
+                {intl.formatMessage({ id: "paperclip.agents.emptyNew" })}
+              </p>
+              <Button variant="outline" size="sm" onClick={() => setAddAgentOpen(true)}>
+                <UserRoundPlus className="size-4" />
+                {intl.formatMessage({ id: "paperclip.addAgent.open" })}
+              </Button>
+            </div>
           )
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {paperclip.agents.map((agent) => (
-              <PaperclipAgentCard
-                key={agent.id}
-                agent={agent}
-                onConfigure={setConfigAgent}
-              />
-            ))}
+            {[...paperclip.agents]
+              .sort(
+                // 主 Agent（dispatcher）置顶，其余保持服务端顺序。
+                (a, b) => Number(b.role === "ceo") - Number(a.role === "ceo"),
+              )
+              .map((agent) => (
+                <PaperclipAgentCard
+                  key={agent.id}
+                  agent={agent}
+                  onConfigure={setConfigAgent}
+                />
+              ))}
           </div>
         )}
       </section>
@@ -298,22 +356,14 @@ export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }
               ))}
             </ul>
           ) : (
-            <div className="flex flex-col items-start gap-3">
-              <p className="text-ui-base text-foreground-subtle">
-                {intl.formatMessage({
-                  id:
-                    statusFilter === "all"
-                      ? "paperclip.issues.empty"
-                      : "paperclip.issues.emptyFiltered",
-                })}
-              </p>
-              {statusFilter === "all" ? (
-                <Button variant="outline" size="sm" onClick={openCreateDialog}>
-                  <Plus className="size-4" />
-                  {intl.formatMessage({ id: "paperclip.createTask" })}
-                </Button>
-              ) : null}
-            </div>
+            <p className="text-ui-base text-foreground-subtle">
+              {intl.formatMessage({
+                id:
+                  statusFilter === "all"
+                    ? "paperclip.issues.empty"
+                    : "paperclip.issues.emptyFiltered",
+              })}
+            </p>
           )
         ) : (
           <ul className="flex flex-col gap-2">
@@ -334,6 +384,9 @@ export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }
         open={createOpen}
         agents={paperclip.agents}
         dispatcher={paperclip.dispatcher}
+        projects={paperclip.projects}
+        workspacePath={workspacePath}
+        currentWorkspaceProjectId={currentWorkspaceProjectId}
         submitting={submitting}
         ensuringDispatcher={ensuringDispatcher}
         state={createState}
@@ -353,7 +406,21 @@ export function PaperclipPage({ onOpenSettings }: { onOpenSettings: () => void }
           if (!open) setConfigAgent(null);
         }}
         loadAdapterModels={paperclip.loadAdapterModels}
+        discoverClaudeModels={paperclip.discoverClaudeModels}
         onSave={paperclip.updateAgent}
+      />
+
+      <PaperclipAddAgentDialog
+        open={addAgentOpen}
+        onOpenChange={setAddAgentOpen}
+        detectLocalAgentAdapters={paperclip.detectLocalAgentAdapters}
+        onCreate={async (input) => {
+          const ok = await paperclip.createAgent(input);
+          if (ok) {
+            toast(intl.formatMessage({ id: "paperclip.addAgent.created" }, { name: input.name }));
+          }
+          return ok;
+        }}
       />
     </div>
   );

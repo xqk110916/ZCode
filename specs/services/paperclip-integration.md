@@ -37,6 +37,15 @@ agent 执行。本集成**不引入 Paperclip 的任何代码**，ZCode 仅作�
   LLM**（经 Paperclip 员工技能创建子任务/指派/自处理）；ZCode 不做客户端侧的
   任务规模判断，只在自动分派提交时把分派指令模板（`PAPERCLIP_DISPATCH_DIRECTIVE`）
   拼入 description——模板在对话框中有提示，用户可见可预期。
+- **工作区绑定**：创建任务可选绑定 Paperclip 项目（任务执行时从项目工作区解析
+  git worktree）。「当前工作区」选项把当前 ZCode workspace 路径映射为
+  `local_path` 项目（`ensureProjectForWorkspace` 按 `codebase.localFolder === cwd`
+  幂等匹配，首次按需创建）；已注册时创建对话框默认选中。项目/仓库的常规管理
+  留在 Paperclip UI。
+- **本地 agent 注册**：「添加 agent」按本机 CLI 探测结果注册对应 local adapter
+  （复用 CLI 已有登录态，不配 key）；探测只是展示提示，不阻断创建。
+- **模型双来源**：agent 配置弹窗的模型清单 = Paperclip adapter 静态清单 +
+  本机 Claude Code 网关发现（见接口节）；手动输入的模型 ID 优先生效。
 
 ## 状态所有者
 
@@ -96,8 +105,13 @@ interface IPaperclipService {
   testConnection(url: string, token?: string): Promise<PaperclipTestConnectionResult>;
   listAgents(): Promise<PaperclipAgent[]>;
   listAdapterModels(adapterType: string): Promise<PaperclipAdapterModel[]>;
+  discoverClaudeModels(): Promise<PaperclipAdapterModel[]>;
   updateAgent(agentId: string, patch: PaperclipUpdateAgentInput): Promise<PaperclipAgent>;
   ensureDispatcherAgent(): Promise<PaperclipAgent>;
+  createAgent(input: { name: string; adapterType: string; role?: string }): Promise<PaperclipAgent>;
+  detectLocalAgentAdapters(): Promise<PaperclipLocalAdapterCandidate[]>;
+  listProjects(): Promise<PaperclipProject[]>;
+  ensureProjectForWorkspace(input: { name: string; cwd: string }): Promise<PaperclipProject>;
   listIssues(filter?: PaperclipIssueFilter): Promise<PaperclipIssue[]>;
   createIssue(input: PaperclipCreateIssueInput): Promise<PaperclipIssue>;
   updateIssue(issueId: string, patch: PaperclipUpdateIssueInput): Promise<PaperclipIssue>;
@@ -107,9 +121,14 @@ interface IPaperclipService {
 }
 ```
 
-- `updateAgent` 走 `PATCH /api/agents/{id}` 的 `{adapterConfig: {model?, effort?}}`
-  （merge 语义：只传要改的字段）；`ensureDispatcherAgent` 幂等（命中 role=ceo 直接
-  返回；创建撞唯一性约束时回读取既有）。
+- `updateAgent` 走 `PATCH /api/agents/{id}` 的 `{name?, adapterConfig: {model?, effort?}}`
+  （merge 语义：只传要改的字段）；`ensureDispatcherAgent`/`ensureProjectForWorkspace`
+  幂等（命中即返回；创建撞唯一性约束时回读取既有）。
+- `detectLocalAgentAdapters` 在 host 进程用 which/where 探测本机 CLI；判定只看
+  是否抛错（stdio ignore 时返回值恒为 null，不可用作依据）。
+- `discoverClaudeModels` 读 `~/.claude/settings.json` 的 env 网关配置，直接调第三方
+  网关 `/v1/models` 拉真实模型（60s 内存缓存）；凭证只发往其配置的端点，不落日志、
+  不持久化；无配置或失败返回空，UI 回落 Paperclip 静态清单 + 手动输入兜底。
 
 - descriptor 频道 `ServiceChannels.Paperclip = "paperclip"`；注册进
   `services/src/node.ts` 的 `createLocalServices` 注册链。
@@ -152,3 +171,11 @@ UI（`packages/ui/src/paperclip/`）：`PaperclipPage` 主视图（`WorkspaceMai
    assigneeAgentId = dispatcher；Paperclip 侧 dispatcher 被 heartbeat 唤醒，
    其决策（自处理或创建子任务指派）体现在任务线程与子任务列表，面板经 WS/
    刷新可见。
+10. 「添加 agent」：本机已装的 CLI 显示「已检测到」，选中创建后立即出现在团队
+    列表；未装的 CLI 也可创建但标注「未检测到」。重复探测结果一致（缓存一次）。
+11. 工作区绑定：选中「当前工作区」提交后，Paperclip 项目列表出现对应
+    `local_path` 项目（cwd = ZCode workspace 路径），issue 带 projectId；再次
+    提交不重复建项目（幂等）。agent 配置弹窗改名保存后列表与指派选项即时更新。
+12. 模型发现：本机 Claude Code 配置了第三方网关时，配置弹窗顶部展示「本机网关」
+    分组的真实模型（实测 11 个 GLM）；未配置/失败时仅显示 Paperclip 静态清单，
+    手动输入仍可保存任意模型 ID。

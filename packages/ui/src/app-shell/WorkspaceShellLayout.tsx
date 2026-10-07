@@ -1847,7 +1847,10 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                                 className="min-h-full"
                               >
                                 <div className="mx-auto flex w-full max-w-4xl flex-col px-4 py-4 md:px-6 md:py-6">
-                                  <PaperclipPage onOpenSettings={handleOpenPaperclipSettings} />
+                                  <PaperclipPage
+                                    onOpenSettings={handleOpenPaperclipSettings}
+                                    workspacePath={workspaceAbsPath}
+                                  />
                                 </div>
                               </ScopedErrorBoundary>
                             </div>

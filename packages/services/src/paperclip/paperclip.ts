@@ -8,6 +8,8 @@ import type {
   PaperclipIssue,
   PaperclipIssueEvent,
   PaperclipIssueFilter,
+  PaperclipLocalAdapterCandidate,
+  PaperclipProject,
   PaperclipTestConnectionResult,
   PaperclipUpdateAgentInput,
   PaperclipUpdateIssueInput,
@@ -35,6 +37,12 @@ export interface IPaperclipService {
   /** adapter 可选模型列表（面板 agent 配置弹窗用）。 */
   listAdapterModels(adapterType: string): Promise<PaperclipAdapterModel[]>;
 
+  /**
+   * 从本机 Claude Code 配置的第三方网关发现真实可用模型（读 ~/.claude/settings.json
+   * 的 ANTHROPIC_BASE_URL/TOKEN，调 /v1/models；无配置或失败返回空）。凭证不落日志。
+   */
+  discoverClaudeModels(): Promise<PaperclipAdapterModel[]>;
+
   /** 更新 agent 的模型/推理力度（PATCH /api/agents/{id}，merge 语义）。 */
   updateAgent(agentId: string, patch: PaperclipUpdateAgentInput): Promise<PaperclipAgent>;
 
@@ -43,6 +51,21 @@ export interface IPaperclipService {
    * （默认 claude_local，复用宿主机 CLI 登录态）。幂等。
    */
   ensureDispatcherAgent(): Promise<PaperclipAgent>;
+
+  /** 在公司内创建 agent（面板「添加本地 agent」入口；常规雇佣仍在 Paperclip UI）。 */
+  createAgent(input: { name: string; adapterType: string; role?: string }): Promise<PaperclipAgent>;
+
+  /** 检测本机可用的 CLI 与 Paperclip local adapter 的映射（PATH 上是否可见）。 */
+  detectLocalAgentAdapters(): Promise<PaperclipLocalAdapterCandidate[]>;
+
+  /** 项目列表（任务的工作区载体）。 */
+  listProjects(): Promise<PaperclipProject[]>;
+
+  /**
+   * 确保存在绑定指定本地路径的项目（codebase.localFolder === cwd）：命中返回既有；
+   * 无则创建（sourceType=local_path，任务执行时从该工作区解析 git worktree）。幂等。
+   */
+  ensureProjectForWorkspace(input: { name: string; cwd: string }): Promise<PaperclipProject>;
 
   /** 按筛选列任务；Paperclip 是任务事实源，每次调用都走当次 API 查询。 */
   listIssues(filter?: PaperclipIssueFilter): Promise<PaperclipIssue[]>;
