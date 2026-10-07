@@ -187,6 +187,33 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
 
     listAgents: () => withCompanyId((companyId) => rest.listAgents(companyId)),
 
+    listAdapterModels: (adapterType) =>
+      withCompanyId((companyId) => rest.listAdapterModels(companyId, adapterType)),
+
+    updateAgent: (agentId, patch) => rest.updateAgent(agentId, patch),
+
+    async ensureDispatcherAgent() {
+      const companyId = await ensureReady();
+      const agents = await rest.listAgents(companyId);
+      const existing = agents.find((agent) => agent.role === "ceo");
+      if (existing) return existing;
+      // 竞态兜底：并发两次 ensure 时后者撞唯一 CEO 约束（409/422），回读取既有。
+      try {
+        return await rest.createAgent(companyId, {
+          name: "Dispatcher",
+          adapterType: "claude_local",
+          role: "ceo",
+        });
+      } catch (error) {
+        if (error instanceof PaperclipApiError && error.httpStatus >= 400 && error.httpStatus < 500) {
+          const agentsAfter = await rest.listAgents(companyId);
+          const raced = agentsAfter.find((agent) => agent.role === "ceo");
+          if (raced) return raced;
+        }
+        throw error;
+      }
+    },
+
     listIssues: (filter) =>
       withCompanyId((companyId) => rest.listIssues(companyId, filter)),
 

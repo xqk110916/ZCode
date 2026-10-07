@@ -19,6 +19,9 @@
 - 新增「Paperclip 任务」主视图面板与设置分区：配置独立部署的 Paperclip server 地址（默认 `http://localhost:3100`，env `PAPERCLIP_SERVER_URL` 可覆盖）与可选 Bearer token（加密存储于本地凭据）后，可在 ZCode 内查看 Paperclip 的 agent 团队（Claude Code / Grok Build 等 CLI agent）、创建任务并指派（Paperclip heartbeat 引擎自动唤醒执行）、实时跟踪任务状态（live-events WebSocket 订阅，断连退避重连，WS 不可用时降级为手动刷新并在状态条如实展示）。
 - 连接由服务层持有（桌面窗口 Host / Web server 进程），renderer 不直连 Paperclip：手机与远程 Web 场景同样可用，token 不进入浏览器上下文。ZCode 只读 agent、只写 issue，不镜像任务数据；agent 的雇佣与 adapter 配置仍在 Paperclip 自身 UI 完成。
 - 行为规范：`specs/services/paperclip-integration.md`；测试：services 包 `paperclipClient.test.ts`（REST 宽容解析 / 错误归一化 / WS 认证拒绝不重试与退避重连）6 个用例，并经本地 `paperclipai test-drive` 实例完成真实 API 与事件流联调。
+- 任务面板体验优化：首次加载展示骨架占位（不再用「暂无任务」冒充空态）；状态筛选补齐「受阻/已取消」并带各状态任务计数；已完成/已取消沉底、其余按更新时间倒序；优先级按紧急/高/中/低用语义色区分，任务编号等宽弱展示；agent 卡片显示职级，活跃/已暂停状态着色；连接状态条区分「连接中」（此前会被误标为手动刷新）。
+- **面板内切换模型**：agent 卡片新增配置入口，弹窗内按该 agent 的 adapter 类型拉取可选模型并切换模型/推理力度（`PATCH /api/agents/{id}`，merge 语义，改动计入 Paperclip 配置修订历史）；effort 与模型不匹配被拒时弹窗如实展示原因。
+- **主 Agent 自动分派**：创建任务对话框新增「主 Agent 自动分派」（公司内 `role=ceo` 的 agent 为调度负责人，存在时默认选中，缺失时可一键创建，默认 `claude_local` 复用本机 CLI 登录态）。分派决策由主 Agent 的 LLM 完成——评估任务规模后选择单个终端 agent 直接处理（允许其内部多 agent 协同）或拆解为多个子任务分别指派；ZCode 只在提交时附加分派指令模板（对话框中有提示，用户可见可预期），不做客户端侧判断。实测：Dispatcher 对「实现+自测」小任务判断为单 agent 即可，创建单个子任务指派给执行 agent，子任务完成后父任务经依赖自动汇总为 done。
 
 #### 分组 / 项目独立数据源（`custom-resources.sqlite`）
 

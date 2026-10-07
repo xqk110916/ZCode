@@ -11,12 +11,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useServices } from "@/hooks/useServices.js";
 import { logger } from "@/logger.js";
 import type {
+  PaperclipAdapterModel,
   PaperclipAgent,
   PaperclipConnectionStateSnapshot,
   PaperclipCreateIssueInput,
   PaperclipIssue,
   PaperclipIssueEvent,
   PaperclipIssueStatus,
+  PaperclipUpdateAgentInput,
 } from "@zcode/shared";
 
 export interface UsePaperclipState {
@@ -24,6 +26,8 @@ export interface UsePaperclipState {
   serviceAvailable: boolean;
   connection: PaperclipConnectionStateSnapshot | null;
   agents: PaperclipAgent[];
+  /** 自动分派的 dispatcher（role==="ceo" 的第一个 agent；无则 null）。 */
+  dispatcher: PaperclipAgent | null;
   issues: PaperclipIssue[];
   loadingIssues: boolean;
   /** 当次操作（创建/更新）失败的可读原因；成功后清空。 */
@@ -32,6 +36,12 @@ export interface UsePaperclipState {
   refresh: () => Promise<void>;
   createIssue: (input: PaperclipCreateIssueInput) => Promise<boolean>;
   markDone: (issueId: string, comment?: string) => Promise<boolean>;
+  /** 更新 agent 模型/effort；成功后合并进本地 agent 列表。 */
+  updateAgent: (agentId: string, patch: PaperclipUpdateAgentInput) => Promise<boolean>;
+  /** 确保 dispatcher（role=ceo）存在；成功后刷新 agent 列表并返回。 */
+  ensureDispatcher: () => Promise<boolean>;
+  /** 按 adapterType 拉可选模型（懒加载缓存）。 */
+  loadAdapterModels: (adapterType: string) => Promise<PaperclipAdapterModel[]>;
 }
 
 export function usePaperclip(): UsePaperclipState {
@@ -163,11 +173,79 @@ export function usePaperclip(): UsePaperclipState {
     [paperclipService, mergeIssueEvent],
   );
 
+  const updateAgent = useCallback(
+    async (agentId: string, patch: PaperclipUpdateAgentInput) => {
+      if (!paperclipService) return false;
+      setActionError(null);
+      try {
+        const updated = await paperclipService.updateAgent(agentId, patch);
+        // PATCH 返回权威后置状态，直接替换本地行（服务端事实）。
+        setAgents((current) =>
+          current.map((agent) => (agent.id === updated.id ? updated : agent)),
+        );
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setActionError(message);
+        return false;
+      }
+    },
+    [paperclipService],
+  );
+
+  const ensureDispatcher = useCallback(async () => {
+    if (!paperclipService) return false;
+    setActionError(null);
+    try {
+      const dispatcher = await paperclipService.ensureDispatcherAgent();
+      setAgents((current) =>
+        current.some((agent) => agent.id === dispatcher.id)
+          ? current.map((agent) => (agent.id === dispatcher.id ? dispatcher : agent))
+          : [...current, dispatcher],
+      );
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setActionError(message);
+      return false;
+    }
+  }, [paperclipService]);
+
+  const adapterModelsCacheRef = useRef(new Map<string, PaperclipAdapterModel[]>());
+  const adapterModelsInFlightRef = useRef(new Map<string, Promise<PaperclipAdapterModel[]>>());
+  const loadAdapterModels = useCallback(
+    async (adapterType: string) => {
+      const cached = adapterModelsCacheRef.current.get(adapterType);
+      if (cached) return cached;
+      const inFlight = adapterModelsInFlightRef.current.get(adapterType);
+      if (inFlight) return inFlight;
+      if (!paperclipService) return [];
+      const load = paperclipService
+        .listAdapterModels(adapterType)
+        .then((models) => {
+          adapterModelsCacheRef.current.set(adapterType, models);
+          return models;
+        })
+        .finally(() => {
+          adapterModelsInFlightRef.current.delete(adapterType);
+        });
+      adapterModelsInFlightRef.current.set(adapterType, load);
+      return load;
+    },
+    [paperclipService],
+  );
+
+  const dispatcher = useMemo(
+    () => agents.find((agent) => agent.role === "ceo") ?? null,
+    [agents],
+  );
+
   return useMemo(
     () => ({
       serviceAvailable: paperclipService !== undefined,
       connection,
       agents,
+      dispatcher,
       issues,
       loadingIssues,
       actionError,
@@ -175,11 +253,15 @@ export function usePaperclip(): UsePaperclipState {
       refresh: loadAll,
       createIssue,
       markDone,
+      updateAgent,
+      ensureDispatcher,
+      loadAdapterModels,
     }),
     [
       paperclipService,
       connection,
       agents,
+      dispatcher,
       issues,
       loadingIssues,
       actionError,
@@ -187,6 +269,9 @@ export function usePaperclip(): UsePaperclipState {
       loadAll,
       createIssue,
       markDone,
+      updateAgent,
+      ensureDispatcher,
+      loadAdapterModels,
     ],
   );
 }

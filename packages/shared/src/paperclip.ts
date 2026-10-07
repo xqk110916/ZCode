@@ -91,9 +91,29 @@ export const paperclipAgentSchema = z
     title: z.string().nullish().catch(null),
     /** agent 状态（active/paused 等，Paperclip 侧语义）。 */
     status: z.string().nullish().catch(null),
+    /** 组织角色（AGENT_ROLES：ceo/cto/.../general）；"ceo" 用作自动分派的 dispatcher 标识。 */
+    role: z.string().optional().catch("general"),
+    /** 汇报对象 agent id（组织链）。 */
+    reportsTo: z.string().nullish().catch(null),
   })
   .passthrough();
 export type PaperclipAgent = z.infer<typeof paperclipAgentSchema>;
+
+/** adapter 可选模型（GET /api/companies/{cid}/adapters/{type}/models）。 */
+export interface PaperclipAdapterModel {
+  id: string;
+  label?: string;
+}
+
+/** 推理力度档位（Paperclip 按模型校验，不支持时 422 如实展示）。 */
+export const PAPERCLIP_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type PaperclipEffort = (typeof PAPERCLIP_EFFORTS)[number];
+
+/** 更新 agent 配置（PATCH /api/agents/{id}，adapterConfig 为 merge 语义）。 */
+export interface PaperclipUpdateAgentInput {
+  model?: string;
+  effort?: PaperclipEffort;
+}
 
 export const paperclipIssueSchema = z
   .object({

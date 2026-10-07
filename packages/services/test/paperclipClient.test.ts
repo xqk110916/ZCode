@@ -150,6 +150,51 @@ test("paperclipIssueSchema：未知状态/优先级宽容回落", () => {
   assert.equal(parsed.priority, "medium");
 });
 
+test("paperclipRestClient：模型列表解析与 agent 更新/创建的 merge body", async () => {
+  const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+  const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    const { pathname } = new URL(String(url));
+    calls.push({ method: init?.method ?? "GET", path: pathname, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (pathname === "/api/companies/c1/adapters/claude_local/models")
+      return jsonResponse([{ id: "claude-opus-5", label: "Opus" }, { id: "claude-sonnet-5" }, { nope: 1 }]);
+    if (pathname === "/api/agents/a1") return jsonResponse({ id: "a1", name: "Echo", role: "general" });
+    if (pathname === "/api/companies/c1/agents")
+      return jsonResponse({ id: "a2", name: "Dispatcher", role: "ceo" }, 201);
+    return jsonResponse({ error: "not found" }, 404);
+  }) as typeof fetch;
+
+  const client = createPaperclipRestClient({
+    resolveBaseUrl: () => "http://paperclip.test:3100",
+    resolveToken: () => null,
+    fetchImpl,
+    logger,
+  });
+
+  // 模型列表：缺 id 的脏条目被丢弃，label 缺省回退 id。
+  const models = await client.listAdapterModels("c1", "claude_local");
+  assert.deepEqual(models, [
+    { id: "claude-opus-5", label: "Opus" },
+    { id: "claude-sonnet-5" },
+  ]);
+
+  // 更新 agent：只传要改的字段（merge 语义），不带 undefined 键。
+  await client.updateAgent("a1", { model: "claude-sonnet-5" });
+  const patchCall = calls.find((call) => call.method === "PATCH" && call.path === "/api/agents/a1");
+  assert.deepEqual(patchCall?.body, { adapterConfig: { model: "claude-sonnet-5" } });
+
+  await client.updateAgent("a1", { model: "claude-opus-5", effort: "high" });
+  const patchCall2 = calls.filter((call) => call.method === "PATCH").at(-1);
+  assert.deepEqual(patchCall2?.body, {
+    adapterConfig: { model: "claude-opus-5", effort: "high" },
+  });
+
+  // 创建 agent：role 可选。
+  const created = await client.createAgent("c1", { name: "Dispatcher", adapterType: "claude_local", role: "ceo" });
+  assert.equal(created.role, "ceo");
+  const createCall = calls.find((call) => call.method === "POST" && call.path === "/api/companies/c1/agents");
+  assert.deepEqual(createCall?.body, { name: "Dispatcher", adapterType: "claude_local", role: "ceo" });
+});
+
 /** 可编程的假 WebSocket：手动触发 open/close/message。 */
 class FakeSocket implements PaperclipWebSocketLike {
   readyState = 0;

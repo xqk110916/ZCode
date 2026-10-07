@@ -1,6 +1,7 @@
 import type { Event } from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
 import type {
+  PaperclipAdapterModel,
   PaperclipAgent,
   PaperclipConnectionStateSnapshot,
   PaperclipCreateIssueInput,
@@ -8,6 +9,7 @@ import type {
   PaperclipIssueEvent,
   PaperclipIssueFilter,
   PaperclipTestConnectionResult,
+  PaperclipUpdateAgentInput,
   PaperclipUpdateIssueInput,
 } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
@@ -29,6 +31,18 @@ export interface IPaperclipService {
 
   /** 列出 Paperclip 公司内的 agent（只读；雇佣/配置在 Paperclip UI 完成）。 */
   listAgents(): Promise<PaperclipAgent[]>;
+
+  /** adapter 可选模型列表（面板 agent 配置弹窗用）。 */
+  listAdapterModels(adapterType: string): Promise<PaperclipAdapterModel[]>;
+
+  /** 更新 agent 的模型/推理力度（PATCH /api/agents/{id}，merge 语义）。 */
+  updateAgent(agentId: string, patch: PaperclipUpdateAgentInput): Promise<PaperclipAgent>;
+
+  /**
+   * 确保公司存在 dispatcher（role="ceo"）agent：命中返回既有；无则创建
+   * （默认 claude_local，复用宿主机 CLI 登录态）。幂等。
+   */
+  ensureDispatcherAgent(): Promise<PaperclipAgent>;
 
   /** 按筛选列任务；Paperclip 是任务事实源，每次调用都走当次 API 查询。 */
   listIssues(filter?: PaperclipIssueFilter): Promise<PaperclipIssue[]>;

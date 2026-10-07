@@ -22,16 +22,29 @@ agent 执行。本集成**不引入 Paperclip 的任何代码**，ZCode 仅作�
 - 未配置或连接失败时，面板显示连接状态与「去设置」引导；不阻塞 ZCode 其他功能。
 - `companyId` 由服务在首次成功调用 `GET /api/companies` 时解析并仅存进程内存；
   404/多公司时取第一个（V1 单公司假设），失败不落盘。
-- ZCode 只读 agent、只写 issue（创建/更新/评论）；agent 的雇佣与 adapter 配置留在
-  Paperclip 自身 UI 完成。
+- ZCode 侧只读 agent 列表；对 agent 的**写操作收敛为两类**：更新模型/推理力度
+  （`updateAgent`，merge 语义）与一键确保 dispatcher 存在（`ensureDispatcherAgent`）。
+  agent 的常规雇佣与完整 adapter 配置留在 Paperclip 自身 UI 完成。
 - 派单即唤醒：`POST /api/companies/{companyId}/issues` 带 `assigneeAgentId` 后由
   Paperclip heartbeat 队列驱动执行，ZCode 不直接拉起任何 CLI 进程。
+- **模型配置**：模型/effort 的事实源是 Paperclip（`adapterConfig.model/effort` +
+  config-revisions 审计）；UI 下拉只是当次查询 `GET .../adapters/{type}/models`
+  的投影 + `PATCH /api/agents/{id}` 写路径。effort 档位与模型的适配由 Paperclip
+  校验，422 原因如实展示。
+- **自动分派**：dispatcher = 公司内 `role === "ceo"` 的 agent（第一个）。创建任务
+  对话框提供「主 Agent 自动分派」选项（dispatcher 存在时默认选中；无则一键创建，
+  默认 `claude_local` 复用宿主机 CLI 登录态）。**分派决策的所有者是 dispatcher 的
+  LLM**（经 Paperclip 员工技能创建子任务/指派/自处理）；ZCode 不做客户端侧的
+  任务规模判断，只在自动分派提交时把分派指令模板（`PAPERCLIP_DISPATCH_DIRECTIVE`）
+  拼入 description——模板在对话框中有提示，用户可见可预期。
 
 ## 状态所有者
 
 | 数据 | 唯一所有者 | 物理位置 |
 | --- | --- | --- |
 | 任务（issue）、agent、company | Paperclip server | Paperclip 的 PostgreSQL |
+| agent 模型/effort 配置 | Paperclip server（`adapterConfig` + config-revisions） | 同上 |
+| 分派决策（单/多 agent、子任务拆解） | dispatcher agent 的 LLM（运行时） | Paperclip 任务线程（可审计的评论与子任务） |
 | server URL 配置 | `ISettingService` | `~/.zcode/v2/setting.json`（`paperclipServerUrl`） |
 | Bearer token | `ICredentialService` | 加密 `credentials.json`（key `paperclip-api-token`） |
 | companyId 缓存 | `PaperclipService`（host/server 进程内） | 进程内存，重启重解析 |
@@ -82,6 +95,9 @@ interface IPaperclipService {
   getConnectionState(): Promise<PaperclipConnectionStateSnapshot>;
   testConnection(url: string, token?: string): Promise<PaperclipTestConnectionResult>;
   listAgents(): Promise<PaperclipAgent[]>;
+  listAdapterModels(adapterType: string): Promise<PaperclipAdapterModel[]>;
+  updateAgent(agentId: string, patch: PaperclipUpdateAgentInput): Promise<PaperclipAgent>;
+  ensureDispatcherAgent(): Promise<PaperclipAgent>;
   listIssues(filter?: PaperclipIssueFilter): Promise<PaperclipIssue[]>;
   createIssue(input: PaperclipCreateIssueInput): Promise<PaperclipIssue>;
   updateIssue(issueId: string, patch: PaperclipUpdateIssueInput): Promise<PaperclipIssue>;
@@ -91,6 +107,10 @@ interface IPaperclipService {
 }
 ```
 
+- `updateAgent` 走 `PATCH /api/agents/{id}` 的 `{adapterConfig: {model?, effort?}}`
+  （merge 语义：只传要改的字段）；`ensureDispatcherAgent` 幂等（命中 role=ceo 直接
+  返回；创建撞唯一性约束时回读取既有）。
+
 - descriptor 频道 `ServiceChannels.Paperclip = "paperclip"`；注册进
   `services/src/node.ts` 的 `createLocalServices` 注册链。
 - REST 客户端 `paperclipRestClient.ts`：依赖注入（resolveBaseUrl/resolveToken/
@@ -99,6 +119,18 @@ interface IPaperclipService {
 
 UI（`packages/ui/src/paperclip/`）：`PaperclipPage` 主视图（`WorkspaceMainView` 加
 `"paperclip"`，Plugin Store 同构入口）；设置分区 `PaperclipSettingsSection`。
+
+面板呈现规则（纯投影，不改事实源）：
+
+- 首次拉取未返回前展示骨架占位，不用空态文案冒充「无数据」；已有数据后的手动刷新
+  不打断当前列表。
+- 状态筛选覆盖全部六种状态并带任务计数；`done`/`cancelled` 在列表内沉底，
+  其余按 `updatedAt`（缺省 `createdAt`）倒序。
+- 优先级用语义色区分强度（urgent=危险、high=警告、medium=信息、low=弱化）；
+  issue 编号用等宽字体弱展示；agent 卡片的 `active`/`paused` 状态走 i18n
+  与语义色，未知状态值原样弱展示。
+- 连接状态条区分 `connected`（成功色）/`polling`（警告色）/`connecting`（信息色）
+  三种标签与图标，不把 `connecting` 误标为手动刷新。
 
 ## 验收场景
 
@@ -111,3 +143,12 @@ UI（`packages/ui/src/paperclip/`）：`PaperclipPage` 主视图（`WorkspaceMai
 5. 断开 Paperclip 进程：状态条转 `disconnected`，操作返回类型化错误；恢复进程后
    重连自动转回 `connected`（退避重连生效）。
 6. 错误地址/token：`testConnection` 返回可读失败原因；面板不崩溃。
+7. agent 卡片打开配置弹窗：模型下拉来自该 adapterType 的当次 API 查询；保存后
+   卡片模型徽章更新（PATCH 返回的权威状态），Paperclip 侧 config-revisions 有记录；
+   effort 与模型不匹配被 422 拒绝时弹窗展示可读原因且不关闭。
+8. 无 dispatcher 时创建任务：选择「主 Agent 自动分派」显示创建引导；一键创建后
+   选项立即可用。重复触发 `ensureDispatcherAgent` 不会创建第二个 ceo。
+9. 自动分派提交：description = 用户描述 + 分派指令模板（对话框有提示），
+   assigneeAgentId = dispatcher；Paperclip 侧 dispatcher 被 heartbeat 唤醒，
+   其决策（自处理或创建子任务指派）体现在任务线程与子任务列表，面板经 WS/
+   刷新可见。

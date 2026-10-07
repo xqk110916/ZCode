@@ -6825,6 +6825,7 @@ const enUS: Record<string, string> = {
   "paperclip.openSettings": "Open Settings",
   "paperclip.state.connected": "Connected · live",
   "paperclip.state.polling": "Connected · manual refresh",
+  "paperclip.state.connecting": "Connecting…",
   "paperclip.refresh": "Refresh",
   "paperclip.createTask": "New Task",
   "paperclip.createTask.description":
@@ -6832,8 +6833,23 @@ const enUS: Record<string, string> = {
   "paperclip.agents.title": "Agent Team",
   "paperclip.agents.empty": "No agents in Paperclip yet. Hire them in the Paperclip UI first.",
   "paperclip.agents.managedExternally": "Managed in Paperclip",
+  "paperclip.agentStatus.active": "Active",
+  "paperclip.agentStatus.paused": "Paused",
+  "paperclip.agents.dispatcher": "Lead agent",
+  "paperclip.agentConfig.open": "Configure agent",
+  "paperclip.agentConfig.title": "Configure {name}",
+  "paperclip.agentConfig.description":
+    "Switch model and reasoning effort; changes apply immediately and are recorded in Paperclip config revisions.",
+  "paperclip.agentConfig.model": "Model",
+  "paperclip.agentConfig.modelDefault": "Default (adapter decides)",
+  "paperclip.agentConfig.loadingModels": "Loading available models…",
+  "paperclip.agentConfig.effort": "Reasoning effort",
+  "paperclip.agentConfig.effortUnchanged": "Unchanged",
+  "paperclip.agentConfig.effortHint":
+    "Supported levels vary by model; unsupported combinations are rejected by Paperclip with an error.",
   "paperclip.issues.title": "Tasks",
   "paperclip.issues.empty": "No tasks yet.",
+  "paperclip.issues.emptyFiltered": "No tasks match this filter.",
   "paperclip.issues.unassigned": "Unassigned",
   "paperclip.issues.markDone": "Done",
   "paperclip.form.title": "Title",
@@ -6841,6 +6857,11 @@ const enUS: Record<string, string> = {
   "paperclip.form.description": "Description",
   "paperclip.form.assignee": "Assign to",
   "paperclip.form.assigneeAny": "Unassigned",
+  "paperclip.form.assigneeAuto": "Auto-dispatch (lead agent)",
+  "paperclip.form.dispatchDirectiveHint":
+    "In auto-dispatch mode, a dispatch directive is appended to the description on submit (the lead agent decides: handle with a single terminal agent, or split into subtasks).",
+  "paperclip.form.dispatcherMissing": "No lead agent (role=ceo) yet.",
+  "paperclip.form.createDispatcher": "Create lead agent",
   "paperclip.form.priority": "Priority",
   "paperclip.form.submit": "Create",
   "paperclip.status.all": "All",
@@ -6858,10 +6879,12 @@ const enUS: Record<string, string> = {
   "settings.paperclip.description":
     "Connect to a self-hosted Paperclip orchestration server to dispatch tasks to CLI agents such as Claude Code and Grok Build. Defaults to http://localhost:3100.",
   "settings.paperclip.serverUrl": "Server URL",
-  "settings.paperclip.serverUrlHint": "Leave empty to use the default or the PAPERCLIP_SERVER_URL env var.",
+  "settings.paperclip.serverUrlHint":
+    "Leave empty to use the default or the PAPERCLIP_SERVER_URL env var.",
   "settings.paperclip.token": "Access token (optional)",
   "settings.paperclip.tokenPlaceholder": "Not needed in trusted-local mode",
-  "settings.paperclip.tokenHint": "Only required for authenticated deployments; stored encrypted in local credentials.",
+  "settings.paperclip.tokenHint":
+    "Only required for authenticated deployments; stored encrypted in local credentials.",
   "settings.paperclip.test": "Test Connection",
   "settings.paperclip.testing": "Testing…",
   "settings.paperclip.testOk": "Connected (version {version})",

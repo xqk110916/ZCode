@@ -7,11 +7,13 @@ import {
   paperclipAgentSchema,
   paperclipCompanySchema,
   paperclipIssueSchema,
+  type PaperclipAdapterModel,
   type PaperclipAgent,
   type PaperclipCompany,
   type PaperclipCreateIssueInput,
   type PaperclipIssue,
   type PaperclipIssueFilter,
+  type PaperclipUpdateAgentInput,
   type PaperclipUpdateIssueInput,
 } from "@zcode/shared";
 import type { ServiceLogger } from "../logger/serviceLogger.js";
@@ -36,6 +38,15 @@ export interface PaperclipRestClient {
   createIssue(companyId: string, input: PaperclipCreateIssueInput): Promise<PaperclipIssue>;
   updateIssue(issueId: string, patch: PaperclipUpdateIssueInput): Promise<PaperclipIssue>;
   postComment(issueId: string, body: string): Promise<void>;
+  /** adapter 可选模型列表（按 adapterType，如 claude_local）。 */
+  listAdapterModels(companyId: string, adapterType: string): Promise<PaperclipAdapterModel[]>;
+  /** 更新 agent 配置；adapterConfig 为 merge 语义（只传要改的字段）。 */
+  updateAgent(agentId: string, patch: PaperclipUpdateAgentInput): Promise<PaperclipAgent>;
+  /** 创建 agent（ZCode 侧仅用于一键创建 dispatcher，常规雇佣留在 Paperclip UI）。 */
+  createAgent(
+    companyId: string,
+    input: { name: string; adapterType: string; role?: string },
+  ): Promise<PaperclipAgent>;
 }
 
 interface PaperclipRestClientDeps {
@@ -164,6 +175,42 @@ export function createPaperclipRestClient(deps: PaperclipRestClientDeps): Paperc
     postComment: (issueId, body) =>
       request("POST", `/issues/${encodeURIComponent(issueId)}/comments`, {
         body: { body },
+      }),
+    listAdapterModels: (companyId, adapterType) =>
+      request("GET", `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(adapterType)}/models`, {
+        parse: (raw) => {
+          const list = Array.isArray(raw) ? raw : arrayFromEnvelope(raw);
+          return list.flatMap((entry): PaperclipAdapterModel[] => {
+            if (!entry || typeof entry !== "object") return [];
+            const record = entry as Record<string, unknown>;
+            if (typeof record.id !== "string" || !record.id) return [];
+            return [
+              {
+                id: record.id,
+                ...(typeof record.label === "string" ? { label: record.label } : {}),
+              },
+            ];
+          });
+        },
+      }),
+    updateAgent: (agentId, patch) =>
+      request("PATCH", `/agents/${encodeURIComponent(agentId)}`, {
+        body: {
+          adapterConfig: {
+            ...(patch.model === undefined ? {} : { model: patch.model }),
+            ...(patch.effort === undefined ? {} : { effort: patch.effort }),
+          },
+        },
+        parse: (raw) => paperclipAgentSchema.parse(raw),
+      }),
+    createAgent: (companyId, input) =>
+      request("POST", `/companies/${encodeURIComponent(companyId)}/agents`, {
+        body: {
+          name: input.name,
+          adapterType: input.adapterType,
+          ...(input.role === undefined ? {} : { role: input.role }),
+        },
+        parse: (raw) => paperclipAgentSchema.parse(raw),
       }),
   };
 }
