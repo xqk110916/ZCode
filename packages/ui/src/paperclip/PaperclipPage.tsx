@@ -7,7 +7,6 @@
 import { useMemo, useState } from "react";
 import {
   CircleCheck,
-  CircleDashed,
   Loader2,
   Plus,
   RefreshCw,
@@ -21,6 +20,7 @@ import { toast } from "@/components/ui/toast.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
 import { usePaperclip } from "@/paperclip/usePaperclip.js";
+import { PaperclipDisconnectedState } from "@/paperclip/PaperclipDisconnectedState.js";
 import {
   agentDisplayName,
   PaperclipAgentCard,
@@ -75,6 +75,19 @@ export function PaperclipPage({
   const [configAgent, setConfigAgent] = useState<PaperclipAgent | null>(null);
   const [ensuringDispatcher, setEnsuringDispatcher] = useState(false);
   const [addAgentOpen, setAddAgentOpen] = useState(false);
+  const [startingLocalServer, setStartingLocalServer] = useState(false);
+
+  const handleStartLocalServer = async () => {
+    setStartingLocalServer(true);
+    try {
+      const status = await paperclip.startLocalServer();
+      if (status && status.state === "error" && status.detail) {
+        toast(status.detail, { variant: "warning" });
+      }
+    } finally {
+      setStartingLocalServer(false);
+    }
+  };
 
   const openIssueCount = useMemo(
     () => paperclip.issues.filter((issue) => !SETTLED_STATUSES.has(issue.status)).length,
@@ -187,30 +200,13 @@ export function PaperclipPage({
 
   if (paperclip.connection?.state === "disconnected" || paperclip.connection === null) {
     return (
-      <div className="flex flex-col items-center gap-4 py-16 text-center">
-        <CircleDashed className="size-8 text-foreground-subtlest" />
-        <div className="flex flex-col gap-1">
-          <p className="text-ui-lg font-medium text-foreground">
-            {intl.formatMessage({ id: "paperclip.notConnected.title" })}
-          </p>
-          <p className="text-ui-base text-foreground-subtle">
-            {intl.formatMessage({ id: "paperclip.notConnected.description" })}
-          </p>
-          {paperclip.connection?.lastError ? (
-            <p className="text-ui-base text-danger">{paperclip.connection.lastError}</p>
-          ) : null}
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void paperclip.refresh()}>
-            <RefreshCw className="size-4" />
-            {intl.formatMessage({ id: "paperclip.retry" })}
-          </Button>
-          <Button onClick={onOpenSettings}>
-            <Settings2 className="size-4" />
-            {intl.formatMessage({ id: "paperclip.openSettings" })}
-          </Button>
-        </div>
-      </div>
+      <PaperclipDisconnectedState
+        lastError={paperclip.connection?.lastError}
+        startingLocalServer={startingLocalServer}
+        onStartLocalServer={() => void handleStartLocalServer()}
+        onRetry={() => void paperclip.refresh()}
+        onOpenSettings={onOpenSettings}
+      />
     );
   }
 

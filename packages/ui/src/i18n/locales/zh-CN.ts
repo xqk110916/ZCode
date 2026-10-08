@@ -6583,6 +6583,16 @@ const zhCN: Record<string, string> = {
   "settings.paperclip.title": "Paperclip",
   "settings.paperclip.description":
     "连接独立部署的 Paperclip 编排服务，管理 Claude Code、Grok Build 等 CLI agent 的任务派发。默认地址 http://localhost:3100。",
+  "settings.paperclip.localServer.title": "本地服务",
+  "settings.paperclip.localServer.running": "运行中",
+  "settings.paperclip.localServer.stopped": "已停止",
+  "settings.paperclip.localServer.busy": "正在执行…",
+  "settings.paperclip.localServer.start": "启动",
+  "settings.paperclip.localServer.stop": "停止",
+  "settings.paperclip.localServer.hint":
+    "启动本机的 Paperclip server：Windows 经 WSL 启动脚本拉起，macOS/Linux 原生运行（首次冷启动约需 1 分钟）。已在运行时启动为幂等操作。",
+  "paperclip.localServer.start": "启动本地服务",
+  "paperclip.localServer.starting": "正在启动本机服务…",
   "settings.paperclip.serverUrl": "Server 地址",
   "settings.paperclip.serverUrlHint": "留空使用默认值或 PAPERCLIP_SERVER_URL 环境变量。",
   "settings.paperclip.token": "访问令牌（可选）",

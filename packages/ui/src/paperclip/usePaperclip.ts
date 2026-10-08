@@ -20,6 +20,7 @@ import type {
   PaperclipIssueStatus,
   PaperclipLocalAdapterCandidate,
   PaperclipProject,
+  PaperclipLocalServerStatus,
   PaperclipUpdateAgentInput,
 } from "@zcode/shared";
 
@@ -36,6 +37,8 @@ export interface UsePaperclipState {
   actionError: string | null;
   refreshing: boolean;
   refresh: () => Promise<void>;
+  /** 启动本机 Paperclip server（幂等）；成功后自动刷新连接与列表。 */
+  startLocalServer: () => Promise<PaperclipLocalServerStatus | null>;
   createIssue: (input: PaperclipCreateIssueInput) => Promise<boolean>;
   markDone: (issueId: string, comment?: string) => Promise<boolean>;
   /** 更新 agent 模型/effort；成功后合并进本地 agent 列表。 */
@@ -149,6 +152,19 @@ export function usePaperclip(): UsePaperclipState {
     }, 30_000);
     return () => clearInterval(timer);
   }, [paperclipService, connection?.state, loadAll]);
+
+  /** 启动本机 server：成功（running）后自动刷新面板；失败把 detail 落到操作错误提示。 */
+  const startLocalServer = useCallback(async (): Promise<PaperclipLocalServerStatus | null> => {
+    if (!paperclipService) return null;
+    setActionError(null);
+    const status = await paperclipService.startLocalServer();
+    if (status.state === "running") {
+      await loadAll();
+    } else if (status.detail) {
+      setActionError(status.detail);
+    }
+    return status;
+  }, [paperclipService, loadAll]);
 
   const createIssue = useCallback(
     async (input: PaperclipCreateIssueInput) => {
@@ -326,6 +342,7 @@ export function usePaperclip(): UsePaperclipState {
       actionError,
       refreshing,
       refresh: loadAll,
+      startLocalServer,
       createIssue,
       markDone,
       updateAgent,
@@ -347,6 +364,7 @@ export function usePaperclip(): UsePaperclipState {
       actionError,
       refreshing,
       loadAll,
+      startLocalServer,
       createIssue,
       markDone,
       updateAgent,

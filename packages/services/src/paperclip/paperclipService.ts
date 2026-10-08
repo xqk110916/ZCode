@@ -13,6 +13,7 @@ import {
   type PaperclipConnectionState,
   type PaperclipConnectionStateSnapshot,
   type PaperclipIssueEvent,
+  type PaperclipLocalServerStatus,
 } from "@zcode/shared";
 import { createServiceLogger, type ServiceLogger } from "../logger/serviceLogger.js";
 import type { ICredentialService } from "../credential/credential.js";
@@ -26,6 +27,10 @@ import {
   type PaperclipRestClient,
 } from "./paperclipRestClient.js";
 import { createPaperclipLiveEvents, type PaperclipLiveEvents } from "./paperclipLiveEvents.js";
+import {
+  createPaperclipLocalServerController,
+  type PaperclipLocalServerDeps,
+} from "./paperclipLocalServer.js";
 
 /** Bearer token 在 ICredentialService 的存储键。 */
 export const PAPERCLIP_TOKEN_CREDENTIAL_KEY = "paperclip-api-token";
@@ -69,6 +74,8 @@ export interface PaperclipServiceFactoryDeps {
   fetchImpl?: typeof fetch;
   logger?: ServiceLogger;
   env?: Record<string, string | undefined>;
+  /** 本地 server 启停控制器的依赖注入（测试用）；缺省按真实进程/文件系统构造。 */
+  localServerDeps?: Partial<PaperclipLocalServerDeps>;
 }
 
 export type PaperclipServiceHandle = IPaperclipService & { dispose(): void };
@@ -187,6 +194,12 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
     return await fn(companyId);
   }
 
+  const localServer = createPaperclipLocalServerController({
+    resolveBaseUrl,
+    ...(deps.fetchImpl === undefined ? {} : { fetchImpl: deps.fetchImpl }),
+    ...(deps.localServerDeps ?? {}),
+  } satisfies PaperclipLocalServerDeps);
+
   const rest = buildRestClient();
 
   const handle: PaperclipServiceHandle = {
@@ -222,6 +235,23 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
         return { ok: false, error: message };
       }
     },
+
+    async startLocalServer(): Promise<PaperclipLocalServerStatus> {
+      const status = await localServer.start();
+      if (status.state === "running") {
+        // 启动成功后主动重连一次，面板不必等 WS 退避重试。
+        resolvedCompany = null;
+        ensureAttempted = true;
+        void ensureReady().catch(() => {
+          // 失败快照已由 ensureReady 落为 disconnected；下一次调用重试。
+        });
+      }
+      return status;
+    },
+
+    stopLocalServer: () => localServer.stop(),
+
+    getLocalServerStatus: () => localServer.getStatus(),
 
     listAgents: () => withCompanyId((companyId) => rest.listAgents(companyId)),
 
@@ -355,6 +385,8 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
     onDidReceiveIssueEvent: issueEventEmitter.event,
 
     dispose() {
+      // 释放 win32 下宿主持有的 wsl.exe 看护会话（服务进程独立语义不受影响）。
+      localServer.dispose();
       liveEvents.stop();
       connectionEmitter.dispose();
       issueEventEmitter.dispose();

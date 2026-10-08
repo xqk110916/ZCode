@@ -1,12 +1,15 @@
 /**
- * Paperclip 设置分区：server 地址 + 可选 Bearer token。
+ * Paperclip 设置分区：server 地址 + 可选 Bearer token + 本地服务启停。
  * URL 存 AppSettings（经 useSettings 走 settingService）；token 存 ICredentialService
  * （加密 credentials.json，key 见 PAPERCLIP_TOKEN_CREDENTIAL_KEY），不进 settings。
  * 保存后下一次面板调用即用新配置重建连接（服务侧懒解析，无需热切换）。
  */
 import { useCallback, useEffect, useState } from "react";
-import { CircleCheck, CircleDashed, Loader2 } from "lucide-react";
-import { DEFAULT_PAPERCLIP_SERVER_URL } from "@zcode/shared";
+import { CircleCheck, CircleDashed, Loader2, Play, Square } from "lucide-react";
+import {
+  DEFAULT_PAPERCLIP_SERVER_URL,
+  type PaperclipLocalServerStatus,
+} from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import { Label } from "@/components/ui/label.js";
@@ -31,6 +34,8 @@ export function PaperclipSettingsSection() {
   const [tokenLoaded, setTokenLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testState, setTestState] = useState<TestState>({ kind: "idle" });
+  const [localServer, setLocalServer] = useState<PaperclipLocalServerStatus | null>(null);
+  const [localServerBusy, setLocalServerBusy] = useState(false);
 
   useEffect(() => {
     if (settings === null) return;
@@ -88,6 +93,38 @@ export function PaperclipSettingsSection() {
         : { kind: "failed", error: result.error ?? "unknown error" },
     );
   }, [serverUrl, token, services.paperclipService]);
+
+  const refreshLocalServer = useCallback(async () => {
+    const paperclipService = services.paperclipService;
+    if (!paperclipService) return;
+    try {
+      setLocalServer(await paperclipService.getLocalServerStatus());
+    } catch {
+      setLocalServer(null);
+    }
+  }, [services.paperclipService]);
+
+  useEffect(() => {
+    void refreshLocalServer();
+  }, [refreshLocalServer]);
+
+  const handleLocalServerAction = useCallback(
+    async (action: "start" | "stop") => {
+      const paperclipService = services.paperclipService;
+      if (!paperclipService) return;
+      setLocalServerBusy(true);
+      try {
+        const status =
+          action === "start"
+            ? await paperclipService.startLocalServer()
+            : await paperclipService.stopLocalServer();
+        setLocalServer(status);
+      } finally {
+        setLocalServerBusy(false);
+      }
+    },
+    [services.paperclipService],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -154,6 +191,67 @@ export function PaperclipSettingsSection() {
               : intl.formatMessage({ id: "settings.paperclip.testing" })}
         </div>
       ) : null}
+      <div className="flex flex-col gap-2 rounded-xl border border-card-border bg-card p-4">
+        <Label>{intl.formatMessage({ id: "settings.paperclip.localServer.title" })}</Label>
+        <div className="flex flex-wrap items-center gap-2">
+          {(() => {
+            const state = localServerBusy
+              ? "busy"
+              : localServer === null
+                ? "unknown"
+                : localServer.state;
+            if (state === "busy" || state === "starting" || state === "stopping") {
+              return (
+                <span className="flex items-center gap-2 text-ui-base text-foreground-subtle">
+                  <Loader2 className="size-4 animate-spin" />
+                  {intl.formatMessage({ id: "settings.paperclip.localServer.busy" })}
+                </span>
+              );
+            }
+            if (state === "running") {
+              return (
+                <span className="flex items-center gap-2 text-ui-base text-success">
+                  <CircleCheck className="size-4" />
+                  {intl.formatMessage({ id: "settings.paperclip.localServer.running" })}
+                </span>
+              );
+            }
+            return (
+              <span className="flex items-center gap-2 text-ui-base text-foreground-subtle">
+                <CircleDashed className="size-4" />
+                {intl.formatMessage({ id: "settings.paperclip.localServer.stopped" })}
+              </span>
+            );
+          })()}
+          <span className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={localServerBusy || localServer?.state === "running"}
+              onClick={() => void handleLocalServerAction("start")}
+            >
+              <Play className="size-4" />
+              {intl.formatMessage({ id: "settings.paperclip.localServer.start" })}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={localServerBusy || localServer?.state !== "running"}
+              onClick={() => void handleLocalServerAction("stop")}
+            >
+              <Square className="size-4" />
+              {intl.formatMessage({ id: "settings.paperclip.localServer.stop" })}
+            </Button>
+          </span>
+        </div>
+        {localServer?.state === "error" && localServer.detail ? (
+          <p className="text-ui-sm text-danger">{localServer.detail}</p>
+        ) : (
+          <p className="text-ui-sm text-foreground-subtlest">
+            {intl.formatMessage({ id: "settings.paperclip.localServer.hint" })}
+          </p>
+        )}
+      </div>
       <SettingsFormActions>
         <Button
           variant="outline"

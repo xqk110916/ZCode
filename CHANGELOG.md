@@ -27,6 +27,7 @@
 - **本地 agent 注册**：面板新增「添加 agent」入口，探测本机已安装的 CLI（claude/kimi/grok/codex/gemini/opencode）一键注册为对应 local adapter 的 agent，复用 CLI 已有登录态；修复探测误报（`execFileSync` stdio ignore 时返回值恒为 null，改按是否抛错判定）。
 - **第三方模型发现**：agent 配置弹窗的模型清单增加本机来源——读 Claude Code 的第三方网关配置（`~/.claude/settings.json`）直连 `/v1/models` 拉取真实可用模型（实测 11 个 GLM 模型，「本机网关」分组置顶展示），凭证不落日志；另支持手动输入模型 ID 优先生效。配置弹窗同时支持修改 agent 名称。
 - **团队呈现优化**：主 Agent 置顶并以 info 描边强调；adapter 徽章改用各模型自身图标（Claude 星芒 / Gemini 四角星 / Grok 环箭头 / ChatGPT 花结 / Kimi 新月 / OpenCode）并去掉 `local` 后缀；agent 状态徽章带状态圆点并补全空闲/错误语义色；卡片底部按角色说明职责。修复 Radix Select 空值选项与 button 嵌套两类渲染报错。
+- **本地服务启停（Windows/WSL 与 macOS 双平台）**：`IPaperclipService` 新增 `startLocalServer` / `stopLocalServer` / `getLocalServerStatus`——以"发命令 + 健康探测"代管本机 Paperclip server，启动前探测保证幂等（多窗口/多宿主安全），轮询上限 300s（实测 WSL 冷启动约 130s）。Windows 以"宿主（ZCode host 进程）持有的 wsl.exe 会话"拉起 WSL 内启动脚本并带看护循环（规避 WSL/systemd 会话结束时的作用域回收，setsid 无法逃逸 cgroup 清理）；macOS/Linux 原生 `npx paperclipai@latest run` 独立存活，npx 解析覆盖 nvm/Homebrew 路径（GUI 启动无 PATH 也可用）。停止按进程模式匹配（字符类技巧避免 pkill 自匹配）并收掉内嵌 PostgreSQL。UI：面板断连引导区「启动本地服务」+ 设置页「本地服务」块（状态 + 启停）；启动成功后服务侧主动重连。Windows/WSL 实机全链路（停止→启动→存活→再停止）验证通过，macOS 待回归。详见 spec「本地服务生命周期」节。
 
 #### 分组 / 项目独立数据源（`custom-resources.sqlite`）
 
@@ -49,7 +50,7 @@
 - `AGENTS.md`：新增「桌面端打包」分档说明（全量 / 快速）、「双端（Web / 桌面）开发与验证口径」（日常调试以 Web 端为主、共享层改动两端覆盖、Web 平台能力降级口径、发版前桌面端回归）与「Git 提交」规范（Conventional Commits + 每次提交同步维护 CHANGELOG.md）。
 - 新增 spec：`specs/services/custom-resource-store.md`。
 - `packages/web` vite dev 开启 `strictPort`：端口被占用时直接失败，避免端口顺延漂移。
-- 测试：services 包新增 6 个单测（分组库 CRUD / 项目字段 KV 路由 / TaskIndexRepo 分组钩子接线），累计 16 个全部通过；server 包新增 local-session-send 路由单测 9 个（目标解析 / 错误映射 / 预热），全部通过。
+- 测试：services 包新增 15 个单测（分组库 CRUD / 项目字段 KV 路由 / TaskIndexRepo 分组钩子接线 / Paperclip 本地服务控制器 9 例），累计 32 个全部通过；server 包新增 local-session-send 路由单测 9 个（目标解析 / 错误映射 / 预热），全部通过。
 
 ### 提交清单
 
@@ -65,4 +66,5 @@
 | `08cf457` | docs(agents): 桌面端打包分档 + 双端开发验证口径 |
 | `652b24d` | chore(web): vite dev 端口占用时直接失败 |
 | `1528272` | docs: 确立提交规范并新建 CHANGELOG |
-| 本次提交 | revert: 移除已废弃的「引导(新)」功能 |
+| `e9ca3d1` | revert: 移除已废弃的「引导(新)」功能 |
+| 本次提交 | feat(services): Paperclip 本地服务启停（Windows/WSL + macOS） |

@@ -6912,6 +6912,16 @@ const enUS: Record<string, string> = {
   "settings.paperclip.title": "Paperclip",
   "settings.paperclip.description":
     "Connect to a self-hosted Paperclip orchestration server to dispatch tasks to CLI agents such as Claude Code and Grok Build. Defaults to http://localhost:3100.",
+  "settings.paperclip.localServer.title": "Local server",
+  "settings.paperclip.localServer.running": "Running",
+  "settings.paperclip.localServer.stopped": "Stopped",
+  "settings.paperclip.localServer.busy": "Working…",
+  "settings.paperclip.localServer.start": "Start",
+  "settings.paperclip.localServer.stop": "Stop",
+  "settings.paperclip.localServer.hint":
+    "Starts the local Paperclip server: on Windows via the WSL start script, natively on macOS/Linux (first cold start may take about a minute). Starting an already-running server is a no-op.",
+  "paperclip.localServer.start": "Start local server",
+  "paperclip.localServer.starting": "Starting local server…",
   "settings.paperclip.serverUrl": "Server URL",
   "settings.paperclip.serverUrlHint":
     "Leave empty to use the default or the PAPERCLIP_SERVER_URL env var.",

@@ -200,6 +200,31 @@ export interface PaperclipIssueEvent {
 }
 
 // ---------------------------------------------------------------------------
+// 本地 server 生命周期（ZCode 代为启停本机 Paperclip 进程）
+// ---------------------------------------------------------------------------
+
+/**
+ * 本地 Paperclip server 进程状态（按健康探测合成，非进程句柄跟踪）：
+ * - running：/api/health 探活成功
+ * - stopped：探活失败且无进行中的启停动作
+ * - starting / stopping：本宿主发起的启停动作进行中（多宿主下其他窗口可能看不到瞬时态）
+ * - error：启动/停止命令失败或等待健康超时（detail 携带原因）
+ */
+export type PaperclipLocalServerState =
+  | "unknown"
+  | "stopped"
+  | "starting"
+  | "running"
+  | "stopping"
+  | "error";
+
+export interface PaperclipLocalServerStatus {
+  state: PaperclipLocalServerState;
+  /** 失败原因 / 平台策略提示（如 WSL 启动脚本缺失）。 */
+  detail?: string;
+}
+
+// ---------------------------------------------------------------------------
 // 请求输入
 // ---------------------------------------------------------------------------
 

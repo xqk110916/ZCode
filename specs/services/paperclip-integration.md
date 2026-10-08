@@ -26,7 +26,8 @@ agent 执行。本集成**不引入 Paperclip 的任何代码**，ZCode 仅作�
   （`updateAgent`，merge 语义）与一键确保 dispatcher 存在（`ensureDispatcherAgent`）。
   agent 的常规雇佣与完整 adapter 配置留在 Paperclip 自身 UI 完成。
 - 派单即唤醒：`POST /api/companies/{companyId}/issues` 带 `assigneeAgentId` 后由
-  Paperclip heartbeat 队列驱动执行，ZCode 不直接拉起任何 CLI 进程。
+  Paperclip heartbeat 队列驱动执行，ZCode 不拉起任何任务执行 CLI 进程（本地 server
+  进程的代为启停见「本地服务生命周期」节，属有意边界扩展）。
 - **模型配置**：模型/effort 的事实源是 Paperclip（`adapterConfig.model/effort` +
   config-revisions 审计）；UI 下拉只是当次查询 `GET .../adapters/{type}/models`
   的投影 + `PATCH /api/agents/{id}` 写路径。effort 档位与模型的适配由 Paperclip
@@ -59,6 +60,32 @@ agent 执行。本集成**不引入 Paperclip 的任何代码**，ZCode 仅作�
 | companyId 缓存 | `PaperclipService`（host/server 进程内） | 进程内存，重启重解析 |
 | WS 连接与重连状态机 | `PaperclipService`（host/server 进程内） | 进程内存 |
 | UI 任务列表投影 | `PaperclipPage` 组件树 | React state，unmount 即弃 |
+
+## 本地服务生命周期（`startLocalServer` / `stopLocalServer` / `getLocalServerStatus`）
+
+- **所有者**：本机 Paperclip server 是独立进程；ZCode 只"发命令 + 健康探测"（`GET /api/health`，
+  3s 超时）。多窗口/多宿主并发启动由"启动前先探 health"守卫幂等（已 running 直接返回）。
+- **平台默认策略**：
+  - Windows：server 部署在 WSL（默认发行版）。**WSL/systemd 会在发起会话结束时回收其作用域内
+    的全部后台进程（setsid 也逃不出 cgroup 作用域清理）**，因此 start 以"宿主（ZCode host 进程）
+    持有的 wsl.exe 会话"承载：会话内先 `setsid nohup` 拉起 `~/.paperclip/start-server.sh`（脚本含
+    nvm 加载、`nvm use 24`），随后进入看护循环（服务进程消失即退出，wsl.exe 自然结束）。服务
+    存活期 ≈ 任一 ZCode 宿主存活期；宿主退出后 WSL 可能回收服务——重新打开 ZCode 点启动即可，
+    亦属 dev 语义。停止按进程模式 pkill server 与内嵌 PostgreSQL（字符类技巧 `paperclip[a]i`
+    避免匹配承载命令的 bash 自身）。内置 Administrator 账户的全权令牌使内嵌 PostgreSQL 无法在
+    Windows 原生运行，故部署在 WSL；启动脚本缺失时返回可操作错误。
+  - macOS/Linux：原生运行 `npx -y paperclipai@latest run`（detached + setsid/nohup 守护，日志
+    `~/.paperclip/server-run.log`，进程独立于 ZCode 存活）；GUI 启动的 ZCode 进程 PATH 常不含
+    nvm，npx 解析依次搜索 `~/.nvm/versions/node/<最新>/bin` → Homebrew → 系统 PATH。
+- **时序**：start = 探 health（已 ok → 幂等 running）→ 发启动命令 → 轮询 health（3s 间隔、上限
+  **300s**——实测 WSL 冷启动约 130s，npx 解析另需约 30s）→ running / 超时 error（detail 带日志
+  位置）。stop = 探 health（未运行 → 幂等 stopped）→ 发停止命令 → 轮询 health 直到失败（2s 间
+  隔、上限 20s）。启动成功后服务侧主动重连一次（不等 WS 退避）。
+- **停止语义**：按 `paperclipai` 进程模式匹配（pkill -f），可能命中用户其他同名进程——停止仅由
+  用户显式触发（设置页按钮），个人机语义可接受。launchd/systemd 托管的 Paperclip（macOS
+  managed install）与本机制互不冲突：health 守卫保证幂等。
+- 实现位于 `packages/services/src/paperclip/paperclipLocalServer.ts`（依赖全注入可测，dispose 释放
+  宿主持有的看护会话）；UI 入口：Paperclip 面板断连引导区「启动本地服务」+ 设置页「本地服务」块。
 
 ## 数据流与事件顺序
 

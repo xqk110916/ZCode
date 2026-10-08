@@ -9,6 +9,7 @@ import type {
   PaperclipIssueEvent,
   PaperclipIssueFilter,
   PaperclipLocalAdapterCandidate,
+  PaperclipLocalServerStatus,
   PaperclipProject,
   PaperclipTestConnectionResult,
   PaperclipUpdateAgentInput,
@@ -19,10 +20,11 @@ import { createServiceDescriptor } from "../descriptors.js";
 /**
  * Paperclip 外部编排服务（browser-safe 接口层）。
  *
- * Paperclip 是独立部署的 agent 编排平台（默认 http://localhost:3100），本服务只是
- * 其 REST/WS 客户端：ZCode 不镜像任务、不拉起 CLI 进程，派单后由 Paperclip 的
- * heartbeat 引擎唤醒对应 adapter（Claude Code / Grok Build 等）执行。
- * 行为契约见 specs/services/paperclip-integration.md。
+ * Paperclip 是独立部署的 agent 编排平台（默认 http://localhost:3100），本服务是
+ * 其 REST/WS 客户端：ZCode 不镜像任务，派单后由 Paperclip 的 heartbeat 引擎唤醒
+ * 对应 adapter（Claude Code / Grok Build 等）执行。任务/进程事实归 Paperclip 所有；
+ * 本机 server 的启动/停止仅为"发命令 + 健康探测"的代管（见 startLocalServer），
+ * 进程本身独立于 ZCode 宿主生命周期。行为契约见 specs/services/paperclip-integration.md。
  */
 export interface IPaperclipService {
   /** 当前连接状态快照（含生效 server 地址与最近错误）。 */
@@ -78,6 +80,18 @@ export interface IPaperclipService {
 
   /** 在任务线程追加评论（会触发 Paperclip 侧对 assignee 的唤醒）。 */
   postComment(issueId: string, body: string): Promise<void>;
+
+  /**
+   * 启动本机 Paperclip server（Windows=WSL 启动脚本；macOS/Linux=原生 npx run）。
+   * 已在运行时幂等返回 running；启动期间轮询健康直到就绪（最长 120s）。
+   */
+  startLocalServer(): Promise<PaperclipLocalServerStatus>;
+
+  /** 停止本机 Paperclip server（按命令模式匹配进程，含内嵌 PostgreSQL）；未运行时幂等。 */
+  stopLocalServer(): Promise<PaperclipLocalServerStatus>;
+
+  /** 本机 server 进程状态（按健康探测合成）。 */
+  getLocalServerStatus(): Promise<PaperclipLocalServerStatus>;
 
   /** 连接状态迁移（含 connected↔polling 的 WS 降级）。 */
   onDidChangeConnectionState: Event<PaperclipConnectionStateSnapshot>;
