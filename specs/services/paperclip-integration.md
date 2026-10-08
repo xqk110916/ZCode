@@ -21,7 +21,8 @@ agent 执行。本集成**不引入 Paperclip 的任何代码**，ZCode 仅作�
   `paperclip-api-token`），可为空（Paperclip trusted-local 模式免认证）。
 - 未配置或连接失败时，面板显示连接状态与「去设置」引导；不阻塞 ZCode 其他功能。
 - `companyId` 由服务在首次成功调用 `GET /api/companies` 时解析并仅存进程内存；
-  404/多公司时取第一个（V1 单公司假设），失败不落盘。
+  404/多公司时取第一个（V1 单公司假设），失败不落盘。列表为空（全新实例，onboard
+  不建公司）时自动创建默认公司 "ZCode" 后连接（首连自举），创建失败按断连口径抛错。
 - ZCode 侧只读 agent 列表；对 agent 的**写操作收敛为两类**：更新模型/推理力度
   （`updateAgent`，merge 语义）与一键确保 dispatcher 存在（`ensureDispatcherAgent`）。
   agent 的常规雇佣与完整 adapter 配置留在 Paperclip 自身 UI 完成。

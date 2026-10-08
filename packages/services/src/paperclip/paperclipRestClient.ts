@@ -35,6 +35,8 @@ export class PaperclipApiError extends Error {
 export interface PaperclipRestClient {
   health(): Promise<{ version?: string }>;
   listCompanies(): Promise<PaperclipCompany[]>;
+  /** 创建公司（全新 Paperclip 实例 companies 为空时由 ZCode 首连自举）。 */
+  createCompany(input: { name: string }): Promise<PaperclipCompany>;
   listAgents(companyId: string): Promise<PaperclipAgent[]>;
   listIssues(companyId: string, filter?: PaperclipIssueFilter): Promise<PaperclipIssue[]>;
   createIssue(companyId: string, input: PaperclipCreateIssueInput): Promise<PaperclipIssue>;
@@ -139,6 +141,11 @@ export function createPaperclipRestClient(deps: PaperclipRestClientDeps): Paperc
           const list = Array.isArray(raw) ? raw : arrayFromEnvelope(raw);
           return list.map((entry) => paperclipCompanySchema.parse(entry));
         },
+      }),
+    createCompany: (input) =>
+      request("POST", "/companies", {
+        body: { name: input.name },
+        parse: (raw) => paperclipCompanySchema.parse(raw),
       }),
     listAgents: (companyId) =>
       request("GET", `/companies/${encodeURIComponent(companyId)}/agents`, {

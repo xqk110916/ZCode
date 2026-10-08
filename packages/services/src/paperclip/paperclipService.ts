@@ -151,11 +151,15 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
     const rest = buildRestClient();
     const attempt = (async () => {
       await rest.health();
-      const companies = await rest.listCompanies();
-      const first = companies[0];
-      if (!first) {
-        throw new PaperclipApiError("paperclip server has no companies", 0, "/companies");
+      let companies = await rest.listCompanies();
+      if (companies.length === 0) {
+        // 全新 Paperclip 实例 companies 为空（onboard 不建公司）；ZCode 首连自举默认公司，
+        // 否则面板永远停在 "no companies" 断连态。失败按原口径抛错。
+        const created = await rest.createCompany({ name: "ZCode" });
+        companies = [created];
       }
+      // 至此 companies 必非空（原列表非空或刚自举创建）。
+      const first = companies[0]!;
       resolvedCompany = { serverUrl: baseUrl, companyId: first.id };
       liveEvents.start(first.id);
       return first.id;

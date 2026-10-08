@@ -28,6 +28,7 @@
 - **第三方模型发现**：agent 配置弹窗的模型清单增加本机来源——读 Claude Code 的第三方网关配置（`~/.claude/settings.json`）直连 `/v1/models` 拉取真实可用模型（实测 11 个 GLM 模型，「本机网关」分组置顶展示），凭证不落日志；另支持手动输入模型 ID 优先生效。配置弹窗同时支持修改 agent 名称。
 - **团队呈现优化**：主 Agent 置顶并以 info 描边强调；adapter 徽章改用各模型自身图标（Claude 星芒 / Gemini 四角星 / Grok 环箭头 / ChatGPT 花结 / Kimi 新月 / OpenCode）并去掉 `local` 后缀；agent 状态徽章带状态圆点并补全空闲/错误语义色；卡片底部按角色说明职责。修复 Radix Select 空值选项与 button 嵌套两类渲染报错。
 - **本地服务启停（Windows/WSL 与 macOS 双平台）**：`IPaperclipService` 新增 `startLocalServer` / `stopLocalServer` / `getLocalServerStatus`——以"发命令 + 健康探测"代管本机 Paperclip server，启动前探测保证幂等（多窗口/多宿主安全），轮询上限 300s（实测 WSL 冷启动约 130s）。Windows 以"宿主（ZCode host 进程）持有的 wsl.exe 会话"拉起 WSL 内启动脚本并带看护循环（规避 WSL/systemd 会话结束时的作用域回收，setsid 无法逃逸 cgroup 清理）；macOS/Linux 原生 `npx paperclipai@latest run` 独立存活，npx 解析覆盖 nvm/Homebrew 路径（GUI 启动无 PATH 也可用）。停止按进程模式匹配（字符类技巧避免 pkill 自匹配）并收掉内嵌 PostgreSQL。UI：面板断连引导区「启动本地服务」+ 设置页「本地服务」块（状态 + 启停）；启动成功后服务侧主动重连。Windows/WSL 实机全链路（停止→启动→存活→再停止）验证通过，macOS 待回归。详见 spec「本地服务生命周期」节。
+- **全新实例首连自举默认公司**：Paperclip `onboard` 不创建 company，全新实例 `/api/companies` 为空会导致 ZCode 永远停在 "no companies" 断连态（Windows/WSL 新部署实测踩中）；`ensureReady` 在公司列表为空时自动创建默认公司 "ZCode" 后正常连接。
 
 #### 分组 / 项目独立数据源（`custom-resources.sqlite`）
 
