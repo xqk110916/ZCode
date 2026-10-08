@@ -2,14 +2,9 @@
  * Paperclip 面板的展示子组件：agent 卡片与任务行。
  * 纯投影展示，不含数据获取（数据在 usePaperclip）。
  */
-import { useState } from "react";
-import { Bot, ChevronDown, CircleCheck, Settings2, Sparkles } from "lucide-react";
-import type {
-  PaperclipAgent,
-  PaperclipIssue,
-  PaperclipIssuePriority,
-  PaperclipIssueStatus,
-} from "@zcode/shared";
+import { useEffect, useState } from "react";
+import { Bot, Settings2, Sparkles, Trash2 } from "lucide-react";
+import type { PaperclipAgent, PaperclipIssuePriority, PaperclipIssueStatus } from "@zcode/shared";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -80,7 +75,7 @@ export function agentDisplayName(agent: PaperclipAgent): string {
 }
 
 export function findAgentName(
-  agents: PaperclipAgent[],
+  agents: readonly PaperclipAgent[],
   assigneeAgentId: string | null | undefined,
 ): string | null {
   if (!assigneeAgentId) return null;
@@ -93,37 +88,6 @@ export function formatTimestamp(value: string | null | undefined, locale: string
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString(locale, { dateStyle: "short", timeStyle: "short" });
-}
-
-function statusBadgeClass(status: PaperclipIssueStatus): string {
-  switch (status) {
-    case "in_progress":
-      return "bg-info-subtle text-info";
-    case "in_review":
-      return "bg-warning-subtle text-warning";
-    case "done":
-      return "bg-success-subtle text-success";
-    case "blocked":
-      return "bg-danger-subtle text-danger";
-    case "cancelled":
-      return "bg-surface-muted text-foreground-subtlest";
-    default:
-      return "bg-surface-muted text-foreground-subtle";
-  }
-}
-
-/** 优先级用语义色区分强度：紧急=危险、高=警告、中=信息、低=弱化。 */
-function priorityBadgeClass(priority: PaperclipIssuePriority): string {
-  switch (priority) {
-    case "urgent":
-      return "bg-danger-subtle text-danger";
-    case "high":
-      return "bg-warning-subtle text-warning";
-    case "medium":
-      return "bg-info-subtle text-info";
-    default:
-      return "bg-surface-muted text-foreground-subtle";
-  }
 }
 
 /** Paperclip agent 状态：已知值走 i18n + 语义色 + 状态点；未知值原样弱展示。 */
@@ -174,20 +138,35 @@ function PaperclipAgentStatusBadge({ status }: { status: string }) {
 
 export function PaperclipAgentCard({
   agent,
+  currentTitle,
+  queueCount,
   onConfigure,
+  onDelete,
 }: {
   agent: PaperclipAgent;
+  /** 正在做的任务标题。不传则不显示负载行。 */
+  currentTitle?: string | null;
+  queueCount?: number;
   onConfigure?: (agent: PaperclipAgent) => void;
+  /** 删除 agent（破坏性操作，卡片内两步确认）。 */
+  onDelete?: (agent: PaperclipAgent) => void;
 }) {
   const { intl } = useZCodeIntl();
   const isDispatcher = agent.role === "ceo";
   const adapterType = agent.adapterType || "";
+  // 两步确认：第一次点击变为"确认删除"文字按钮，4 秒无操作自动复位。
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  useEffect(() => {
+    if (!confirmingDelete) return;
+    const timer = setTimeout(() => setConfirmingDelete(false), 4_000);
+    return () => clearTimeout(timer);
+  }, [confirmingDelete]);
   return (
     // 页面内容区无更外层圆角容器，卡片按容器层级从 rounded-xl 起（DESIGN.md Radius）。
     // dispatcher（主 Agent）用 info 描边强调，配合列表置顶排序。
     <div
       className={cn(
-        "flex flex-col gap-2 rounded-xl border bg-card p-4 transition-colors",
+        "flex flex-col gap-1.5 rounded-xl border bg-card p-3 transition-colors",
         isDispatcher
           ? "border-info/40 hover:border-info/60"
           : "border-card-border hover:border-border-hover",
@@ -206,17 +185,57 @@ export function PaperclipAgentCard({
         {agent.title ? (
           <span className="truncate text-ui-sm text-foreground-subtle">{agent.title}</span>
         ) : null}
-        {onConfigure ? (
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="ml-auto shrink-0"
-            aria-label={intl.formatMessage({ id: "paperclip.agentConfig.open" })}
-            onClick={() => onConfigure(agent)}
-          >
-            <Settings2 className="size-4" />
-          </Button>
-        ) : null}
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          {confirmingDelete ? (
+            <>
+              <Button
+                variant="destructive"
+                size="xs"
+                onClick={() => onDelete?.(agent)}
+                aria-label={intl.formatMessage({ id: "paperclip.agents.deleteConfirmYes" })}
+              >
+                {intl.formatMessage({ id: "paperclip.agents.deleteConfirmYes" })}
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => setConfirmingDelete(false)}
+                aria-label={intl.formatMessage({ id: "paperclip.agents.deleteConfirmNo" })}
+              >
+                {intl.formatMessage({ id: "paperclip.agents.deleteConfirmNo" })}
+              </Button>
+            </>
+          ) : (
+            <>
+              {onConfigure ? (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={intl.formatMessage({ id: "paperclip.agentConfig.open" })}
+                  onClick={() => onConfigure(agent)}
+                >
+                  <Settings2 className="size-4" />
+                </Button>
+              ) : null}
+              {onDelete ? (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="text-foreground-subtle hover:text-destructive"
+                  aria-label={intl.formatMessage({ id: "paperclip.agents.delete" })}
+                  title={
+                    isDispatcher
+                      ? intl.formatMessage({ id: "paperclip.agents.deleteDispatcherHint" })
+                      : intl.formatMessage({ id: "paperclip.agents.delete" })
+                  }
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              ) : null}
+            </>
+          )}
+        </span>
       </div>
       <div className="flex flex-wrap gap-1">
         {isDispatcher ? (
@@ -241,107 +260,20 @@ export function PaperclipAgentCard({
         ) : null}
         {agent.status ? <PaperclipAgentStatusBadge status={agent.status} /> : null}
       </div>
-      <p className="text-ui-sm text-foreground-subtlest">
-        {isDispatcher
-          ? intl.formatMessage({ id: "paperclip.agents.roleDispatcherHint" })
-          : intl.formatMessage({ id: "paperclip.agents.roleWorkerHint" })}
-      </p>
-    </div>
-  );
-}
-
-export function PaperclipIssueRow({
-  issue,
-  locale,
-  agentName,
-  onMarkDone,
-}: {
-  issue: PaperclipIssue;
-  locale: string;
-  agentName: string | null;
-  onMarkDone: () => void;
-}) {
-  const { intl } = useZCodeIntl();
-  const [expanded, setExpanded] = useState(false);
-  const hasDetail = Boolean(issue.description && issue.description.trim());
-  return (
-    <li className="flex flex-col rounded-xl border border-card-border bg-card transition-colors hover:border-border-hover">
-      <div
-        role={hasDetail ? "button" : undefined}
-        tabIndex={hasDetail ? 0 : undefined}
-        aria-expanded={hasDetail ? expanded : undefined}
-        onClick={hasDetail ? () => setExpanded((value) => !value) : undefined}
-        onKeyDown={
-          hasDetail
-            ? (event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  setExpanded((value) => !value);
-                }
-              }
-            : undefined
-        }
-        className={cn(
-          "flex flex-wrap items-center gap-3 px-4 py-3",
-          hasDetail && "cursor-pointer",
-        )}
-      >
-        <Badge variant="secondary" className={cn("shrink-0", statusBadgeClass(issue.status))}>
-          {intl.formatMessage({ id: statusLabelKey(issue.status) })}
-        </Badge>
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex min-w-0 items-center gap-2">
-            {issue.identifier ? (
-              <span className="shrink-0 font-mono text-ui-sm text-foreground-subtle">
-                {issue.identifier}
-              </span>
-            ) : null}
-            <span className="truncate text-ui-base text-foreground">{issue.title}</span>
-          </span>
-          <span className="truncate text-ui-sm text-foreground-subtlest">
-            {[
-              agentName ?? intl.formatMessage({ id: "paperclip.issues.unassigned" }),
-              formatTimestamp(issue.updatedAt ?? issue.createdAt, locale),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Badge variant="secondary" className={cn("text-ui-sm", priorityBadgeClass(issue.priority))}>
-            {intl.formatMessage({ id: priorityLabelKey(issue.priority) })}
-          </Badge>
-          {issue.status !== "done" && issue.status !== "cancelled" ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(event) => {
-                // 行点击是展开详情；完成按钮独立动作，不随行触发。
-                event.stopPropagation();
-                onMarkDone();
-              }}
-            >
-              <CircleCheck className="size-4" />
-              {intl.formatMessage({ id: "paperclip.issues.markDone" })}
-            </Button>
-          ) : null}
-          {hasDetail ? (
-            <ChevronDown
-              className={cn(
-                "size-4 shrink-0 text-foreground-subtlest transition-transform",
-                expanded && "rotate-180",
-              )}
-            />
-          ) : null}
-        </div>
-      </div>
-      {hasDetail && expanded ? (
-        <div className="border-t border-border-subtle px-4 py-3">
-          <p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-ui-base text-foreground-subtle">
-            {issue.description}
+      {queueCount !== undefined ? (
+        <div className="flex flex-col gap-0.5">
+          <p className="truncate text-ui-sm text-foreground-subtle">
+            {currentTitle
+              ? intl.formatMessage({ id: "paperclip.agents.currentTask" }, { title: currentTitle })
+              : intl.formatMessage({ id: "paperclip.agents.idleTask" })}
           </p>
+          {queueCount > 0 ? (
+            <p className="text-ui-xs text-foreground-subtlest">
+              {intl.formatMessage({ id: "paperclip.agents.queueCount" }, { count: queueCount })}
+            </p>
+          ) : null}
         </div>
       ) : null}
-    </li>
+    </div>
   );
 }

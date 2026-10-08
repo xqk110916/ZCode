@@ -5,12 +5,15 @@ import type {
   PaperclipAgent,
   PaperclipConnectionStateSnapshot,
   PaperclipCreateIssueInput,
+  PaperclipInteraction,
   PaperclipIssue,
   PaperclipIssueEvent,
   PaperclipIssueFilter,
   PaperclipLocalAdapterCandidate,
   PaperclipLocalServerStatus,
+  PaperclipIssueComment,
   PaperclipProject,
+  PaperclipRunSnapshot,
   PaperclipTestConnectionResult,
   PaperclipUpdateAgentInput,
   PaperclipUpdateIssueInput,
@@ -57,6 +60,9 @@ export interface IPaperclipService {
   /** 在公司内创建 agent（面板「添加本地 agent」入口；常规雇佣仍在 Paperclip UI）。 */
   createAgent(input: { name: string; adapterType: string; role?: string }): Promise<PaperclipAgent>;
 
+  /** 删除 agent（团队管理，二次确认由 UI 承担；幂等语义遵循服务端）。 */
+  deleteAgent(agentId: string): Promise<void>;
+
   /** 检测本机可用的 CLI 与 Paperclip local adapter 的映射（PATH 上是否可见）。 */
   detectLocalAgentAdapters(): Promise<PaperclipLocalAdapterCandidate[]>;
 
@@ -81,9 +87,38 @@ export interface IPaperclipService {
   /** 在任务线程追加评论（会触发 Paperclip 侧对 assignee 的唤醒）。 */
   postComment(issueId: string, body: string): Promise<void>;
 
+  /** 单个任务的心跳历史。 */
+  listIssueRuns(issueId: string): Promise<PaperclipRunSnapshot[]>;
+
+  /** 线程交互（提问、确认、建议拆任务）。 */
+  listIssueInteractions(issueId: string): Promise<PaperclipInteraction[]>;
+
+  acceptIssueInteraction(
+    issueId: string,
+    interactionId: string,
+    body?: { selectedOptionIds?: string[] },
+  ): Promise<void>;
+
+  rejectIssueInteraction(issueId: string, interactionId: string, reason?: string): Promise<void>;
+
+  respondIssueInteraction(
+    issueId: string,
+    interactionId: string,
+    answers: ReadonlyArray<{ questionId: string; optionIds: string[]; otherText?: string | null }>,
+  ): Promise<void>;
+
   /**
-   * 启动本机 Paperclip server（Windows=WSL 启动脚本；macOS/Linux=原生 npx run）。
-   * 已在运行时幂等返回 running；启动期间轮询健康直到就绪（最长 120s）。
+   * 任务执行快照：合并 live-runs（进行中）与最近 heartbeat 摘要（已结束的失败/完成）。
+   * 两个端点有一个成功即返回；都失败才抛错。
+   */
+  listRunSnapshots(): Promise<PaperclipRunSnapshot[]>;
+
+  /** 任务评论线程（新的在前）。面板用它显示 agent 刚写了什么，而不是只看状态枚举。 */
+  listIssueComments(issueId: string): Promise<PaperclipIssueComment[]>;
+
+  /**
+   * 启动本机 Paperclip server（各平台原生 npx 运行，外置 PostgreSQL 服务承载数据库）。
+   * 已在运行时幂等返回 running；启动期间轮询健康直到就绪（最长 300s）。
    */
   startLocalServer(): Promise<PaperclipLocalServerStatus>;
 

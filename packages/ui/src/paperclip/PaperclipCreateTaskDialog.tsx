@@ -11,6 +11,7 @@ import type {
   PaperclipIssuePriority,
   PaperclipProject,
 } from "@zcode/shared";
+import { PaperclipAdapterBrandIcon } from "@/paperclip/paperclipViews.js";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible.js";
 import { Button } from "@/components/ui/button.js";
 import {
@@ -68,6 +69,13 @@ export const EMPTY_CREATE_DIALOG_STATE: PaperclipCreateDialogState = {
 };
 
 const PRIORITIES: ReadonlyArray<PaperclipIssuePriority> = ["urgent", "high", "medium", "low"];
+
+const PRIORITY_DOT: Record<PaperclipIssuePriority, string> = {
+  urgent: "bg-danger",
+  high: "bg-warning",
+  medium: "bg-info",
+  low: "bg-foreground-subtlest",
+};
 
 export function PaperclipCreateTaskDialog({
   open,
@@ -132,20 +140,27 @@ export function PaperclipCreateTaskDialog({
             input.onSelect();
           }
         }}
-        className={assigneeOptionClass(input.selected)}
+        className={cn(
+          "flex w-full items-center gap-2.5 border-b border-border-subtle px-3 py-2 text-left text-ui-sm transition-colors last:border-b-0",
+          "focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-focused",
+          input.selected
+            ? "bg-selected text-foreground"
+            : "text-foreground-subtle hover:bg-surface-hover hover:text-foreground",
+        )}
       >
+        <span
+          className={cn(
+            "flex size-3.5 shrink-0 items-center justify-center rounded-full border",
+            input.selected ? "border-info" : "border-border",
+          )}
+          aria-hidden
+        >
+          {input.selected ? <span className="size-1.5 rounded-full bg-info" /> : null}
+        </span>
         {input.children}
       </div>
     );
   }
-
-  const assigneeOptionClass = (selected: boolean) =>
-    cn(
-      "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-ui-base transition-colors",
-      selected
-        ? "border-border-focused bg-selected text-foreground"
-        : "border-border-subtle text-foreground-subtle hover:bg-surface-hover hover:text-foreground",
-    );
 
   const canSubmit =
     state.title.trim().length > 0 && !submitting && !(autoDispatch && !dispatcher);
@@ -153,7 +168,7 @@ export function PaperclipCreateTaskDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-lg"
+        className="flex max-h-[min(88vh,760px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
         onKeyDown={(event) => {
           // ⌘/Ctrl+Enter 快捷提交（DESIGN.md：键盘是 first-class 交互路径）。
           if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canSubmit) {
@@ -162,14 +177,14 @@ export function PaperclipCreateTaskDialog({
           }
         }}
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0 border-b border-border-subtle px-5 py-4 pr-12">
           <DialogTitle>{intl.formatMessage({ id: "paperclip.createTask" })}</DialogTitle>
           <DialogDescription>
             {intl.formatMessage({ id: "paperclip.createTask.description" })}
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-4 px-5">
-          <div className="flex flex-col gap-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="paperclip-create-title">
               {intl.formatMessage({ id: "paperclip.form.title" })}
             </Label>
@@ -181,7 +196,37 @@ export function PaperclipCreateTaskDialog({
               autoFocus
             />
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
+            <Label>{intl.formatMessage({ id: "paperclip.form.priority" })}</Label>
+            <div
+              role="radiogroup"
+              aria-label={intl.formatMessage({ id: "paperclip.form.priority" })}
+              className="flex w-full gap-0.5 rounded-xl border border-border-subtle bg-surface-muted p-0.5"
+            >
+              {PRIORITIES.map((priority) => {
+                const selected = state.priority === priority;
+                return (
+                  <button
+                    key={priority}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => onStateChange({ ...state, priority })}
+                    className={cn(
+                      "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-ui-sm transition-colors",
+                      selected
+                        ? "bg-popover text-foreground shadow-sm"
+                        : "text-foreground-subtle hover:text-foreground",
+                    )}
+                  >
+                    <span className={cn("size-1.5 rounded-full", PRIORITY_DOT[priority])} aria-hidden />
+                    {intl.formatMessage({ id: priorityLabelKey(priority) })}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="paperclip-create-description">
               {intl.formatMessage({ id: "paperclip.form.description" })}
             </Label>
@@ -189,12 +234,13 @@ export function PaperclipCreateTaskDialog({
               id="paperclip-create-description"
               value={state.description}
               onChange={(event) => onStateChange({ ...state, description: event.target.value })}
-              rows={4}
+              rows={3}
             />
           </div>
-          <div className="flex flex-col gap-1">
-            <Label role="group">{intl.formatMessage({ id: "paperclip.form.assignee" })}</Label>
-            <div role="radiogroup" aria-label={intl.formatMessage({ id: "paperclip.form.assignee" })} className="flex flex-col gap-1">
+          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <Label>{intl.formatMessage({ id: "paperclip.form.assignee" })}</Label>
+            <div role="radiogroup" aria-label={intl.formatMessage({ id: "paperclip.form.assignee" })} className="max-h-56 overflow-y-auto rounded-xl border border-border-subtle">
               {renderOption({
                 key: "auto",
                 selected: autoDispatch,
@@ -234,26 +280,34 @@ export function PaperclipCreateTaskDialog({
                   </>
                 ),
               })}
-              {agents
-                .filter((agent) => agent.id !== dispatcher?.id)
-                .map((agent) =>
-                  renderOption({
-                    key: agent.id,
-                    selected: state.assigneeAgentId === agent.id,
-                    onSelect: () => selectAssignee(agent.id),
-                    children: (
-                      <>
-                        <UserRound className="size-4 shrink-0 text-foreground-subtlest" />
-                        <span className="min-w-0 flex-1 truncate">{agentDisplayName(agent)}</span>
-                        {agent.adapterType ? (
-                          <span className="shrink-0 font-mono text-ui-sm text-foreground-subtlest">
-                            {agent.adapterType}
+              {agents.map((agent) =>
+                renderOption({
+                  key: agent.id,
+                  selected: state.assigneeAgentId === agent.id,
+                  onSelect: () => selectAssignee(agent.id),
+                  children: (
+                    <>
+                      <PaperclipAdapterBrandIcon
+                        adapterType={agent.adapterType || ""}
+                        className="size-4 shrink-0 object-contain"
+                      />
+                      <span className="min-w-0 flex-1 truncate">
+                        {agentDisplayName(agent)}
+                        {agent.id === dispatcher?.id ? (
+                          <span className="ml-2 shrink-0 rounded bg-info-subtle px-1.5 py-0.5 text-ui-xs font-medium text-info">
+                            {intl.formatMessage({ id: "paperclip.form.dispatcherBadge" })}
                           </span>
                         ) : null}
-                      </>
-                    ),
-                  }),
-                )}
+                      </span>
+                      {agent.adapterType ? (
+                        <span className="shrink-0 font-mono text-ui-sm text-foreground-subtlest">
+                          {agent.adapterType}
+                        </span>
+                      ) : null}
+                    </>
+                  ),
+                }),
+              )}
               {renderOption({
                 key: "none",
                 selected: state.assigneeAgentId === "",
@@ -281,12 +335,12 @@ export function PaperclipCreateTaskDialog({
               </Collapsible>
             ) : null}
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="flex min-w-0 flex-col gap-1.5">
             <Label>{intl.formatMessage({ id: "paperclip.form.workspace" })}</Label>
             <div
               role="radiogroup"
               aria-label={intl.formatMessage({ id: "paperclip.form.workspace" })}
-              className="flex flex-col gap-1"
+              className="max-h-56 overflow-y-auto rounded-xl border border-border-subtle"
             >
               {renderOption({
                 key: "workspace-none",
@@ -316,15 +370,15 @@ export function PaperclipCreateTaskDialog({
                         <span className="block truncate font-medium">
                           {intl.formatMessage({ id: "paperclip.form.workspaceCurrent" })}
                         </span>
-                        <span className="block truncate font-mono text-ui-sm text-foreground-subtlest">
+                        <span className="block break-all font-mono text-ui-xs leading-snug text-foreground-subtlest">
                           {workspacePath}
                         </span>
+                        {currentWorkspaceProjectId === null ? (
+                          <span className="mt-0.5 block text-ui-xs text-foreground-subtlest">
+                            {intl.formatMessage({ id: "paperclip.form.workspaceWillCreate" })}
+                          </span>
+                        ) : null}
                       </span>
-                      {currentWorkspaceProjectId === null ? (
-                        <span className="shrink-0 text-ui-sm text-foreground-subtlest">
-                          {intl.formatMessage({ id: "paperclip.form.workspaceWillCreate" })}
-                        </span>
-                      ) : null}
                     </>
                   ),
                 })
@@ -353,44 +407,21 @@ export function PaperclipCreateTaskDialog({
                 )}
             </div>
           </div>
-          <div className="flex flex-col gap-1">
-            <Label>{intl.formatMessage({ id: "paperclip.form.priority" })}</Label>
-            <div
-              role="radiogroup"
-              aria-label={intl.formatMessage({ id: "paperclip.form.priority" })}
-              className="flex w-full gap-0.5 rounded-lg border border-border-subtle bg-surface-muted p-0.5"
-            >
-              {PRIORITIES.map((priority) => {
-                const selected = state.priority === priority;
-                return (
-                  <button
-                    key={priority}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => onStateChange({ ...state, priority })}
-                    className={cn(
-                      "flex-1 rounded-md px-2 py-1 text-ui-base transition-colors",
-                      selected
-                        ? "bg-popover text-foreground shadow-sm"
-                        : "text-foreground-subtle hover:text-foreground",
-                    )}
-                  >
-                    {intl.formatMessage({ id: priorityLabelKey(priority) })}
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </div>
-        <DialogFooter className="gap-3">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {intl.formatMessage({ id: "common.cancel" })}
-          </Button>
-          <Button disabled={!canSubmit} onClick={onSubmit}>
-            {submitting ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-            {intl.formatMessage({ id: "paperclip.form.submit" })}
-          </Button>
+        <DialogFooter className="shrink-0 gap-3 border-t border-border-subtle px-5 py-3 sm:items-center sm:justify-between">
+          <span className="text-ui-xs text-foreground-subtlest">
+            {intl.formatMessage({ id: "paperclip.form.shortcut" })}
+          </span>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              {intl.formatMessage({ id: "common.cancel" })}
+            </Button>
+            <Button disabled={!canSubmit} onClick={onSubmit}>
+              {submitting ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+              {intl.formatMessage({ id: "paperclip.form.submit" })}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Emitter } from "@zcode/rpc";
 import {
+  mergePaperclipRuns,
   resolvePaperclipServerUrl,
   type PaperclipAdapterModel,
   type PaperclipConnectionState,
@@ -253,7 +254,18 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
       return status;
     },
 
-    stopLocalServer: () => localServer.stop(),
+    async stopLocalServer(): Promise<PaperclipLocalServerStatus> {
+      const status = await localServer.stop();
+      if (status.state === "stopped") {
+        // 服务是用户主动停止的：立即停掉 WS 重试链路并把连接态置为 disconnected。
+        // 否则 WS 断开会被状态机解读为 polling 降级并无限退避重试，面板停在
+        // 黄色"手动刷新"转圈，永远不会回到断连引导（启动按钮）。
+        liveEvents.stop();
+        resolvedCompany = null;
+        setState("disconnected", "Local paperclip server stopped");
+      }
+      return status;
+    },
 
     getLocalServerStatus: () => localServer.getStatus(),
 
@@ -263,6 +275,8 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
       withCompanyId((companyId) => rest.listAdapterModels(companyId, adapterType)),
 
     updateAgent: (agentId, patch) => rest.updateAgent(agentId, patch),
+
+    deleteAgent: (agentId) => rest.deleteAgent(agentId),
 
     async ensureDispatcherAgent() {
       const companyId = await ensureReady();
@@ -286,7 +300,20 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
       }
     },
 
-    createAgent: (input) => withCompanyId((companyId) => rest.createAgent(companyId, input)),
+    async createAgent(input) {
+      return withCompanyId(async (companyId) => {
+        // 产品规则：每个 CLI（adapterType）只允许注册一个 agent，重复添加直接拒绝。
+        const agents = await rest.listAgents(companyId);
+        if (agents.some((agent) => agent.adapterType === input.adapterType)) {
+          throw new PaperclipApiError(
+            `adapter ${input.adapterType} already has an agent`,
+            409,
+            "/agents",
+          );
+        }
+        return rest.createAgent(companyId, input);
+      });
+    },
 
     async discoverClaudeModels() {
       // Claude Code 走第三方代理时，Paperclip 的静态模型清单（官方 opus/sonnet 等）
@@ -384,12 +411,42 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
 
     postComment: (issueId, body) => rest.postComment(issueId, body),
 
+    async listRunSnapshots() {
+      return withCompanyId(async (companyId) => {
+        const [liveResult, recentResult] = await Promise.allSettled([
+          rest.listLiveRuns(companyId),
+          rest.listRecentRuns(companyId),
+        ]);
+        const live = liveResult.status === "fulfilled" ? liveResult.value : [];
+        const recent = recentResult.status === "fulfilled" ? recentResult.value : [];
+        if (liveResult.status === "rejected" && recentResult.status === "rejected") {
+          throw liveResult.reason;
+        }
+        return mergePaperclipRuns(live, recent);
+      });
+    },
+
+    listIssueComments: (issueId) => rest.listIssueComments(issueId),
+
+    listIssueRuns: (issueId) => rest.listIssueRuns(issueId),
+
+    listIssueInteractions: (issueId) => rest.listIssueInteractions(issueId),
+
+    acceptIssueInteraction: (issueId, interactionId, body) =>
+      rest.acceptIssueInteraction(issueId, interactionId, body),
+
+    rejectIssueInteraction: (issueId, interactionId, reason) =>
+      rest.rejectIssueInteraction(issueId, interactionId, reason),
+
+    respondIssueInteraction: (issueId, interactionId, answers) =>
+      rest.respondIssueInteraction(issueId, interactionId, answers),
+
     onDidChangeConnectionState: connectionEmitter.event,
 
     onDidReceiveIssueEvent: issueEventEmitter.event,
 
     dispose() {
-      // 释放 win32 下宿主持有的 wsl.exe 看护会话（服务进程独立语义不受影响）。
+      // 原生形态下宿主不持有子进程句柄；dispose 仅释放控制器内部状态。
       localServer.dispose();
       liveEvents.stop();
       connectionEmitter.dispose();

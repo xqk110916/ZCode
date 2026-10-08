@@ -33,12 +33,22 @@ agent 执行。本集成**不引入 Paperclip 的任何代码**，ZCode 仅作�
   config-revisions 审计）；UI 下拉只是当次查询 `GET .../adapters/{type}/models`
   的投影 + `PATCH /api/agents/{id}` 写路径。effort 档位与模型的适配由 Paperclip
   校验，422 原因如实展示。
-- **自动分派**：dispatcher = 公司内 `role === "ceo"` 的 agent（第一个）。创建任务
-  对话框提供「主 Agent 自动分派」选项（dispatcher 存在时默认选中；无则一键创建，
-  默认 `claude_local` 复用宿主机 CLI 登录态）。**分派决策的所有者是 dispatcher 的
-  LLM**（经 Paperclip 员工技能创建子任务/指派/自处理）；ZCode 不做客户端侧的
-  任务规模判断，只在自动分派提交时把分派指令模板（`PAPERCLIP_DISPATCH_DIRECTIVE`）
-  拼入 description——模板在对话框中有提示，用户可见可预期。
+- **自动分派与主 Agent**：dispatcher = 公司内 `role === "ceo"` 的 agent（第一个）。
+  - 团队新增第一个 agent 时若无 dispatcher，默认其成为主 Agent（role=ceo）。
+  - 主 Agent 标识可在 agent 配置弹窗手动切换（`PATCH role=ceo`，原主 Agent 回落
+    general；Paperclip 侧 ceo 唯一，切换即时生效不随表单提交）。
+  - 创建任务对话框的指派**默认值为直接指派给主 Agent**（用户可改选「主 Agent
+    自动分派」/其他 agent/不指派）；主 Agent 行内带标识徽章。
+  - 「主 Agent 自动分派」选项：无 dispatcher 时可一键创建（默认 `claude_local`
+    复用宿主机 CLI 登录态）。**分派决策的所有者是 dispatcher 的 LLM**（经
+    Paperclip 员工技能创建子任务/指派/自处理）；ZCode 不做客户端侧的任务规模
+    判断，只在自动分派提交时把分派指令模板（`PAPERCLIP_DISPATCH_DIRECTIVE`）
+    拼入 description——模板在对话框中有提示，用户可见可预期。
+- **agent 唯一性**：每个 CLI（adapterType）只允许注册一个 agent——添加弹窗对已
+  存在的 adapter 禁选并标注「已添加」，服务层 `createAgent` 重复时拒绝（409 语义）。
+- **agent 删除**：agent 卡片提供删除（`DELETE /api/agents/{id}`），卡片内两步确认
+  （4s 自动复位）；主 Agent 也可删除（删除时悬停提示团队将失去主 Agent，新任务
+  默认指派与自动分派需先补位），删除成功从本地列表移除并 toast 反馈。
 - **工作区绑定**：创建任务可选绑定 Paperclip 项目（任务执行时从项目工作区解析
   git worktree）。「当前工作区」选项把当前 ZCode workspace 路径映射为
   `local_path` 项目（`ensureProjectForWorkspace` 按 `codebase.localFolder === cwd`
@@ -66,27 +76,29 @@ agent 执行。本集成**不引入 Paperclip 的任何代码**，ZCode 仅作�
 
 - **所有者**：本机 Paperclip server 是独立进程；ZCode 只"发命令 + 健康探测"（`GET /api/health`，
   3s 超时）。多窗口/多宿主并发启动由"启动前先探 health"守卫幂等（已 running 直接返回）。
-- **平台默认策略**：
-  - Windows：server 部署在 WSL（默认发行版）。**WSL/systemd 会在发起会话结束时回收其作用域内
-    的全部后台进程（setsid 也逃不出 cgroup 作用域清理）**，因此 start 以"宿主（ZCode host 进程）
-    持有的 wsl.exe 会话"承载：会话内先 `setsid nohup` 拉起 `~/.paperclip/start-server.sh`（脚本含
-    nvm 加载、`nvm use 24`），随后进入看护循环（服务进程消失即退出，wsl.exe 自然结束）。服务
-    存活期 ≈ 任一 ZCode 宿主存活期；宿主退出后 WSL 可能回收服务——重新打开 ZCode 点启动即可，
-    亦属 dev 语义。停止按进程模式 pkill server 与内嵌 PostgreSQL（字符类技巧 `paperclip[a]i`
-    避免匹配承载命令的 bash 自身）。内置 Administrator 账户的全权令牌使内嵌 PostgreSQL 无法在
-    Windows 原生运行，故部署在 WSL；启动脚本缺失时返回可操作错误。
+- **平台默认策略（全平台原生运行，数据库一律外置 PostgreSQL，由系统服务承载）**：
+  - Windows：`npx.cmd -y paperclipai@latest run` 原生 detached 启动；数据库连接串持久化在
+    实例配置（`~/.paperclip/instances/default/config.json`），无需命令行注入。停止经
+    powershell `Get-CimInstance` 按命令行模式匹配终止 node 进程（字符类技巧 `paperclip[a]i`
+    避免过滤串自匹配）；外置 PostgreSQL 服务不随 server 停止（系统服务语义）。
+    注：内置 Administrator 账户的全权令牌使内嵌 PostgreSQL 无法原生运行——外置 PG 服务
+    （如 PostgreSQL 17 Windows 服务）是 Windows 上的唯一支持形态。曾用 WSL 承载（规避
+    令牌问题），已废弃：WSL 与 Windows 双环境导致 CLI 检测（Windows 侧）与 agent 执行
+    （WSL 侧）不一致（grok 装在用户级 PATH，WSL 互操作不可见，agent 无法启动）。
   - macOS/Linux：原生运行 `npx -y paperclipai@latest run`（detached + setsid/nohup 守护，日志
-    `~/.paperclip/server-run.log`，进程独立于 ZCode 存活）；GUI 启动的 ZCode 进程 PATH 常不含
-    nvm，npx 解析依次搜索 `~/.nvm/versions/node/<最新>/bin` → Homebrew → 系统 PATH。
+    `~/.paperclip/server-run.log`，进程独立于 ZCode 存活）；停止 pkill（同款字符类技巧）。
+  - npx 解析：GUI/服务进程 PATH 常不含 nvm——Windows 依次搜 `C:\nvm4w\nodejs\npx.cmd` →
+    `%APPDATA%\npm\npx.cmd` → PATH 兜底；POSIX 依次搜 `~/.nvm/versions/node/<最新>/bin` →
+    Homebrew → 系统 PATH。
 - **时序**：start = 探 health（已 ok → 幂等 running）→ 发启动命令 → 轮询 health（3s 间隔、上限
-  **300s**——实测 WSL 冷启动约 130s，npx 解析另需约 30s）→ running / 超时 error（detail 带日志
+  **300s**——实测冷启动约 130s，npx 解析另需约 30s）→ running / 超时 error（detail 带日志
   位置）。stop = 探 health（未运行 → 幂等 stopped）→ 发停止命令 → 轮询 health 直到失败（2s 间
   隔、上限 20s）。启动成功后服务侧主动重连一次（不等 WS 退避）。
-- **停止语义**：按 `paperclipai` 进程模式匹配（pkill -f），可能命中用户其他同名进程——停止仅由
-  用户显式触发（设置页按钮），个人机语义可接受。launchd/systemd 托管的 Paperclip（macOS
+- **停止语义**：按 `paperclipai` 进程模式匹配，可能命中用户其他同名进程——停止仅由用户显式
+  触发（面板/设置页按钮），个人机语义可接受。launchd/systemd 托管的 Paperclip（macOS
   managed install）与本机制互不冲突：health 守卫保证幂等。
-- 实现位于 `packages/services/src/paperclip/paperclipLocalServer.ts`（依赖全注入可测，dispose 释放
-  宿主持有的看护会话）；UI 入口：Paperclip 面板断连引导区「启动本地服务」+ 设置页「本地服务」块。
+- 实现位于 `packages/services/src/paperclip/paperclipLocalServer.ts`（依赖全注入可测）；UI 入口：
+  Paperclip 面板断连引导区「启动本地服务」+ 连接状态条「停止服务」+ 设置页「本地服务」块。
 
 ## 数据流与事件顺序
 

@@ -21,8 +21,13 @@ import type {
   PaperclipLocalAdapterCandidate,
   PaperclipProject,
   PaperclipLocalServerStatus,
+  PaperclipInteraction,
+  PaperclipIssueComment,
+  PaperclipRunSnapshot,
   PaperclipUpdateAgentInput,
 } from "@zcode/shared";
+import { usePaperclipActivity, type PaperclipIssueWriteToken } from "@/paperclip/usePaperclipActivity.js";
+import { usePaperclipActions } from "@/paperclip/usePaperclipActions.js";
 
 export interface UsePaperclipState {
   /** 服务是否可用（旧 host/测试 double 未注册时为 false，面板显示不可用态）。 */
@@ -39,14 +44,20 @@ export interface UsePaperclipState {
   refresh: () => Promise<void>;
   /** 启动本机 Paperclip server（幂等）；成功后自动刷新连接与列表。 */
   startLocalServer: () => Promise<PaperclipLocalServerStatus | null>;
+  /** 停止本机 Paperclip server；完成后刷新面板回到断连引导态。 */
+  stopLocalServer: () => Promise<PaperclipLocalServerStatus | null>;
   createIssue: (input: PaperclipCreateIssueInput) => Promise<boolean>;
   markDone: (issueId: string, comment?: string) => Promise<boolean>;
   /** 更新 agent 模型/effort；成功后合并进本地 agent 列表。 */
   updateAgent: (agentId: string, patch: PaperclipUpdateAgentInput) => Promise<boolean>;
   /** 确保 dispatcher（role=ceo）存在；成功后刷新 agent 列表并返回。 */
   ensureDispatcher: () => Promise<boolean>;
+  /** 把主 Agent（调度负责人）切换到指定 agent；原主 Agent 回落普通成员。 */
+  setDispatcher: (agentId: string) => Promise<boolean>;
   /** 创建 agent（「添加本地 agent」入口）；成功后并入本地列表。 */
   createAgent: (input: { name: string; adapterType: string; role?: string }) => Promise<boolean>;
+  /** 删除 agent；成功后从本地列表移除（二次确认由 UI 承担）。 */
+  deleteAgent: (agentId: string) => Promise<boolean>;
   /** 检测本机 CLI → local adapter 候选（懒加载缓存一次）。 */
   detectLocalAgentAdapters: () => Promise<PaperclipLocalAdapterCandidate[]>;
   /** 从本机 Claude Code 第三方网关发现真实模型清单（无配置返回空）。 */
@@ -57,6 +68,35 @@ export interface UsePaperclipState {
   ensureProjectForWorkspace: (input: { name: string; cwd: string }) => Promise<PaperclipProject | null>;
   /** 按 adapterType 拉可选模型（懒加载缓存）。 */
   loadAdapterModels: (adapterType: string) => Promise<PaperclipAdapterModel[]>;
+  /** 每个任务最新一条心跳（进行中优先）。 */
+  runsByIssueId: Readonly<Record<string, PaperclipRunSnapshot>>;
+  /** 每个任务最近几条心跳，新的在前。 */
+  runHistoryByIssueId: Readonly<Record<string, PaperclipRunSnapshot[]>>;
+  /** 已拉取的评论，新的在前。展开任务或进度轮询时写入。 */
+  commentsByIssueId: Readonly<Record<string, PaperclipIssueComment[]>>;
+  /** 线程交互。有 pending 的提问/确认时，任务阶段是「等你」。 */
+  interactionsByIssueId: Readonly<Record<string, PaperclipInteraction[]>>;
+  /** 展开某条任务时补拉评论、交互和该任务自己的心跳。 */
+  loadIssueThread: (issueId: string) => Promise<void>;
+  /** 给人回复 agent。评论会唤醒 assignee。 */
+  replyToIssue: (issueId: string, body: string) => Promise<boolean>;
+  /** 状态交接：审查通过、打回。comment 与状态同一请求提交。 */
+  transitionIssue: (
+    issueId: string,
+    status: PaperclipIssueStatus,
+    comment?: string,
+  ) => Promise<boolean>;
+  acceptInteraction: (
+    issueId: string,
+    interactionId: string,
+    body?: { selectedOptionIds?: string[] },
+  ) => Promise<boolean>;
+  rejectInteraction: (issueId: string, interactionId: string, reason?: string) => Promise<boolean>;
+  respondInteraction: (
+    issueId: string,
+    interactionId: string,
+    answers: ReadonlyArray<{ questionId: string; optionIds: string[] }>,
+  ) => Promise<boolean>;
 }
 
 export function usePaperclip(): UsePaperclipState {
@@ -71,6 +111,26 @@ export function usePaperclip(): UsePaperclipState {
   const [actionError, setActionError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const issuesRequestEpochRef = useRef(0);
+  const issueWriteSeqRef = useRef(0);
+
+  const commitIssues = useCallback((next: PaperclipIssue[], token: PaperclipIssueWriteToken) => {
+    if (issuesRequestEpochRef.current !== token.epoch) return;
+    if (issueWriteSeqRef.current !== token.seq) return;
+    issueWriteSeqRef.current += 1;
+    setIssues(next);
+  }, []);
+
+  const activityMode =
+    connection?.state === "connected" || connection?.state === "polling" ? connection.state : "off";
+  const activity = usePaperclipActivity({
+    mode: activityMode,
+    issues,
+    onIssues: commitIssues,
+    getIssueToken: () => ({
+      epoch: issuesRequestEpochRef.current,
+      seq: issueWriteSeqRef.current,
+    }),
+  });
 
   const mergeIssueEvent = useCallback((event: PaperclipIssueEvent) => {
     if (!event.issueId && !event.issue) return;
@@ -86,6 +146,7 @@ export function usePaperclip(): UsePaperclipState {
       copy[index] = next;
       return copy;
     });
+    issueWriteSeqRef.current += 1;
   }, []);
 
   // 连接状态与任务事件订阅：服务实例不变则只订阅一次，cleanup 统一 dispose。
@@ -107,6 +168,7 @@ export function usePaperclip(): UsePaperclipState {
     if (!paperclipService) return;
     const epoch = issuesRequestEpochRef.current + 1;
     issuesRequestEpochRef.current = epoch;
+    const seqAtStart = issueWriteSeqRef.current;
     setRefreshing(true);
     setLoadingIssues(true);
     try {
@@ -125,7 +187,7 @@ export function usePaperclip(): UsePaperclipState {
       ]);
       if (issuesRequestEpochRef.current !== epoch) return;
       setAgents(nextAgents);
-      setIssues(nextIssues);
+      commitIssues(nextIssues, { epoch, seq: seqAtStart });
       setProjects(nextProjects);
     } catch (error) {
       if (issuesRequestEpochRef.current !== epoch) return;
@@ -136,7 +198,7 @@ export function usePaperclip(): UsePaperclipState {
         setLoadingIssues(false);
       }
     }
-  }, [paperclipService]);
+  }, [paperclipService, commitIssues]);
 
   // 面板挂载即拉一次（懒启动连接也在服务侧完成）。
   useEffect(() => {
@@ -166,215 +228,66 @@ export function usePaperclip(): UsePaperclipState {
     return status;
   }, [paperclipService, loadAll]);
 
-  const createIssue = useCallback(
-    async (input: PaperclipCreateIssueInput) => {
-      if (!paperclipService) return false;
-      setActionError(null);
-      try {
-        const created = await paperclipService.createIssue(input);
-        mergeIssueEvent({ kind: "created", issue: created, receivedAt: Date.now() });
-        return true;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setActionError(message);
-        return false;
-      }
-    },
-    [paperclipService, mergeIssueEvent],
-  );
-
-  const markDone = useCallback(
-    async (issueId: string, comment?: string) => {
-      if (!paperclipService) return false;
-      setActionError(null);
-      try {
-        const updated = await paperclipService.updateIssue(
-          issueId,
-          // Paperclip 审批门禁要求决策评论与状态变更同请求提交。
-          comment === undefined ? { status: "done" satisfies PaperclipIssueStatus } : { status: "done" satisfies PaperclipIssueStatus, comment },
-        );
-        mergeIssueEvent({ kind: "updated", issue: updated, receivedAt: Date.now() });
-        return true;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setActionError(message);
-        return false;
-      }
-    },
-    [paperclipService, mergeIssueEvent],
-  );
-
-  const updateAgent = useCallback(
-    async (agentId: string, patch: PaperclipUpdateAgentInput) => {
-      if (!paperclipService) return false;
-      setActionError(null);
-      try {
-        const updated = await paperclipService.updateAgent(agentId, patch);
-        // PATCH 返回权威后置状态，直接替换本地行（服务端事实）。
-        setAgents((current) =>
-          current.map((agent) => (agent.id === updated.id ? updated : agent)),
-        );
-        return true;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setActionError(message);
-        return false;
-      }
-    },
-    [paperclipService],
-  );
-
-  const ensureDispatcher = useCallback(async () => {
-    if (!paperclipService) return false;
+  /** 停止本机 server：成功（stopped）后刷新面板（自然回到断连引导态）。 */
+  const stopLocalServer = useCallback(async (): Promise<PaperclipLocalServerStatus | null> => {
+    if (!paperclipService) return null;
     setActionError(null);
-    try {
-      const dispatcher = await paperclipService.ensureDispatcherAgent();
-      setAgents((current) =>
-        current.some((agent) => agent.id === dispatcher.id)
-          ? current.map((agent) => (agent.id === dispatcher.id ? dispatcher : agent))
-          : [...current, dispatcher],
-      );
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setActionError(message);
-      return false;
+    const status = await paperclipService.stopLocalServer();
+    if (status.detail) {
+      setActionError(status.detail);
     }
-  }, [paperclipService]);
+    await loadAll();
+    return status;
+  }, [paperclipService, loadAll]);
 
-  const createAgent = useCallback(
-    async (input: { name: string; adapterType: string; role?: string }) => {
-      if (!paperclipService) return false;
-      setActionError(null);
-      try {
-        const created = await paperclipService.createAgent(input);
-        setAgents((current) =>
-          current.some((agent) => agent.id === created.id)
-            ? current.map((agent) => (agent.id === created.id ? created : agent))
-            : [...current, created],
-        );
-        return true;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setActionError(message);
-        return false;
-      }
-    },
-    [paperclipService],
-  );
 
-  const localAdaptersCacheRef = useRef<PaperclipLocalAdapterCandidate[] | null>(null);
-  const detectLocalAgentAdapters = useCallback(async () => {
-    if (localAdaptersCacheRef.current) return localAdaptersCacheRef.current;
-    if (!paperclipService) return [];
-    const candidates = await paperclipService.detectLocalAgentAdapters();
-    localAdaptersCacheRef.current = candidates;
-    return candidates;
-  }, [paperclipService]);
-
-  const discoverClaudeModels = useCallback(async () => {
-    if (!paperclipService) return [];
-    try {
-      return await paperclipService.discoverClaudeModels();
-    } catch {
-      return [];
-    }
-  }, [paperclipService]);
-
-  const ensureProjectForWorkspace = useCallback(
-    async (input: { name: string; cwd: string }) => {
-      if (!paperclipService) return null;
-      setActionError(null);
-      try {
-        const project = await paperclipService.ensureProjectForWorkspace(input);
-        setProjects((current) =>
-          current.some((entry) => entry.id === project.id)
-            ? current.map((entry) => (entry.id === project.id ? project : entry))
-            : [...current, project],
-        );
-        return project;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setActionError(message);
-        return null;
-      }
-    },
-    [paperclipService],
-  );
-
-  const adapterModelsCacheRef = useRef(new Map<string, PaperclipAdapterModel[]>());
-  const adapterModelsInFlightRef = useRef(new Map<string, Promise<PaperclipAdapterModel[]>>());
-  const loadAdapterModels = useCallback(
-    async (adapterType: string) => {
-      const cached = adapterModelsCacheRef.current.get(adapterType);
-      if (cached) return cached;
-      const inFlight = adapterModelsInFlightRef.current.get(adapterType);
-      if (inFlight) return inFlight;
-      if (!paperclipService) return [];
-      const load = paperclipService
-        .listAdapterModels(adapterType)
-        .then((models) => {
-          adapterModelsCacheRef.current.set(adapterType, models);
-          return models;
-        })
-        .finally(() => {
-          adapterModelsInFlightRef.current.delete(adapterType);
-        });
-      adapterModelsInFlightRef.current.set(adapterType, load);
-      return load;
-    },
-    [paperclipService],
-  );
+  const actions = usePaperclipActions({
+    paperclipService,
+    mergeIssueEvent,
+    setActionError,
+    setAgents,
+    setProjects,
+    loadIssueThread: activity.loadIssueThread,
+  });
 
   const dispatcher = useMemo(
     () => agents.find((agent) => agent.role === "ceo") ?? null,
     [agents],
   );
 
-  return useMemo(
-    () => ({
-      serviceAvailable: paperclipService !== undefined,
-      connection,
-      agents,
-      dispatcher,
-      issues,
-      loadingIssues,
-      actionError,
-      refreshing,
-      refresh: loadAll,
-      startLocalServer,
-      createIssue,
-      markDone,
-      updateAgent,
-      ensureDispatcher,
-      createAgent,
-      detectLocalAgentAdapters,
-      discoverClaudeModels,
-      projects,
-      ensureProjectForWorkspace,
-      loadAdapterModels,
-    }),
-    [
-      paperclipService,
-      connection,
-      agents,
-      dispatcher,
-      issues,
-      loadingIssues,
-      actionError,
-      refreshing,
-      loadAll,
-      startLocalServer,
-      createIssue,
-      markDone,
-      updateAgent,
-      ensureDispatcher,
-      createAgent,
-      detectLocalAgentAdapters,
-      discoverClaudeModels,
-      projects,
-      ensureProjectForWorkspace,
-      loadAdapterModels,
-    ],
-  );
+  return {
+    serviceAvailable: paperclipService !== undefined,
+    connection,
+    agents,
+    dispatcher,
+    issues,
+    loadingIssues,
+    actionError,
+    refreshing,
+    refresh: loadAll,
+    startLocalServer,
+    stopLocalServer,
+    createIssue: actions.createIssue,
+    markDone: actions.markDone,
+    updateAgent: actions.updateAgent,
+    ensureDispatcher: actions.ensureDispatcher,
+    setDispatcher: actions.setDispatcher,
+    createAgent: actions.createAgent,
+    deleteAgent: actions.deleteAgent,
+    detectLocalAgentAdapters: actions.detectLocalAgentAdapters,
+    discoverClaudeModels: actions.discoverClaudeModels,
+    projects,
+    ensureProjectForWorkspace: actions.ensureProjectForWorkspace,
+    loadAdapterModels: actions.loadAdapterModels,
+    runsByIssueId: activity.runsByIssueId,
+    runHistoryByIssueId: activity.runHistoryByIssueId,
+    commentsByIssueId: activity.commentsByIssueId,
+    interactionsByIssueId: activity.interactionsByIssueId,
+    loadIssueThread: activity.loadIssueThread,
+    replyToIssue: actions.replyToIssue,
+    transitionIssue: actions.transitionIssue,
+    acceptInteraction: actions.acceptInteraction,
+    rejectInteraction: actions.rejectInteraction,
+    respondInteraction: actions.respondInteraction,
+  };
 }

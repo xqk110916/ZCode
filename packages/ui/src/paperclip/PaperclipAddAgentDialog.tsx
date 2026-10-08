@@ -24,11 +24,14 @@ export function PaperclipAddAgentDialog({
   open,
   onOpenChange,
   detectLocalAgentAdapters,
+  existingAdapterTypes,
   onCreate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   detectLocalAgentAdapters: () => Promise<PaperclipLocalAdapterCandidate[]>;
+  /** 团队中已注册的 adapterType 集合：每个 CLI 只允许添加一次，已存在的禁选。 */
+  existingAdapterTypes: ReadonlySet<string>;
   onCreate: (input: { name: string; adapterType: string; role?: string }) => Promise<boolean>;
 }) {
   const { intl } = useZCodeIntl();
@@ -49,7 +52,10 @@ export function PaperclipAddAgentDialog({
       .then((list) => {
         if (disposed) return;
         setCandidates(list);
-        const firstAvailable = list.find((candidate) => candidate.available);
+        // 默认选中第一个"未添加且可用"的 CLI；已添加的被禁选。
+        const firstAvailable = list.find(
+          (candidate) => candidate.available && !existingAdapterTypes.has(candidate.adapterType),
+        );
         if (firstAvailable) {
           setSelected(firstAvailable.adapterType);
           applyDefaultName(firstAvailable.cliName);
@@ -61,7 +67,7 @@ export function PaperclipAddAgentDialog({
     return () => {
       disposed = true;
     };
-  }, [open, detectLocalAgentAdapters]);
+  }, [open, detectLocalAgentAdapters, existingAdapterTypes]);
 
   function applyDefaultName(cliName: string) {
     setName(cliName.charAt(0).toUpperCase() + cliName.slice(1));
@@ -101,21 +107,27 @@ export function PaperclipAddAgentDialog({
               >
                 {candidates.map((candidate) => {
                   const isSelected = selected === candidate.adapterType;
+                  const alreadyAdded = existingAdapterTypes.has(candidate.adapterType);
                   return (
                     <button
                       key={candidate.adapterType}
                       type="button"
                       role="radio"
                       aria-checked={isSelected}
+                      aria-disabled={alreadyAdded}
+                      disabled={alreadyAdded}
                       onClick={() => {
+                        if (alreadyAdded) return;
                         setSelected(candidate.adapterType);
                         applyDefaultName(candidate.cliName);
                       }}
                       className={cn(
                         "flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-ui-base transition-colors",
-                        isSelected
-                          ? "border-border-focused bg-selected text-foreground"
-                          : "border-border-subtle text-foreground-subtle hover:bg-surface-hover hover:text-foreground",
+                        alreadyAdded
+                          ? "cursor-not-allowed border-border-subtle opacity-60"
+                          : isSelected
+                            ? "border-border-focused bg-selected text-foreground"
+                            : "border-border-subtle text-foreground-subtle hover:bg-surface-hover hover:text-foreground",
                       )}
                     >
                       <PaperclipAdapterBrandIcon
@@ -123,20 +135,29 @@ export function PaperclipAddAgentDialog({
                         className="size-4 shrink-0 object-contain"
                       />
                       <span className="min-w-0 flex-1 truncate font-mono">{candidate.cliName}</span>
-                      <span
-                        className={cn(
-                          "shrink-0 text-ui-sm",
-                          candidate.available
-                            ? "text-success"
-                            : "text-foreground-subtlest",
-                        )}
-                      >
-                        {intl.formatMessage({
-                          id: candidate.available
-                            ? "paperclip.addAgent.detected"
-                            : "paperclip.addAgent.notDetected",
-                        })}
-                      </span>
+                      {alreadyAdded ? (
+                        <span
+                          className="shrink-0 text-ui-sm text-foreground-subtlest"
+                          title={intl.formatMessage({ id: "paperclip.addAgent.alreadyAddedHint" })}
+                        >
+                          {intl.formatMessage({ id: "paperclip.addAgent.alreadyAdded" })}
+                        </span>
+                      ) : (
+                        <span
+                          className={cn(
+                            "shrink-0 text-ui-sm",
+                            candidate.available
+                              ? "text-success"
+                              : "text-foreground-subtlest",
+                          )}
+                        >
+                          {intl.formatMessage({
+                            id: candidate.available
+                              ? "paperclip.addAgent.detected"
+                              : "paperclip.addAgent.notDetected",
+                          })}
+                        </span>
+                      )}
                     </button>
                   );
                 })}

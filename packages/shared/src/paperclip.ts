@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { PaperclipIssueComment, PaperclipRunSnapshot } from "./paperclipProgress.js";
 
 // ============================================================================
 // Paperclip 外部编排服务的共享 DTO
@@ -115,6 +116,8 @@ export interface PaperclipUpdateAgentInput {
   name?: string;
   model?: string;
   effort?: PaperclipEffort;
+  /** 组织角色（AGENT_ROLES）；ZCode 侧仅用于切换主 Agent（ceo ↔ general）。 */
+  role?: string;
 }
 
 /** 本机 CLI 与 Paperclip local adapter 的候选映射（面板「添加本地 agent」用）。 */
@@ -138,6 +141,47 @@ export const paperclipIssueSchema = z
     projectId: z.string().nullish().catch(null),
     goalId: z.string().nullish().catch(null),
     parentId: z.string().nullish().catch(null),
+    /** 阻塞本任务的 issue id。上游字段名不稳，两条都收。 */
+    blockedByIssueIds: z.array(z.string()).optional(),
+    blockedBy: z
+      .array(
+        z.union([
+          z.string(),
+          z
+            .object({
+              id: z.string(),
+              identifier: z.string().nullish(),
+              title: z.string().nullish(),
+            })
+            .passthrough(),
+        ]),
+      )
+      .optional(),
+    /**
+     * 列表接口通常不带 blockedBy，但会带当前阻塞摘要。
+     * 形状不稳时丢掉，避免整条任务解析失败。
+     */
+    blockerAttention: z
+      .object({
+        directBlockerIssueId: z.string().nullish(),
+        terminalBlockerIssueId: z.string().nullish(),
+        sampleBlockerIdentifier: z.string().nullish(),
+        terminalBlocker: z
+          .union([
+            z.string(),
+            z
+              .object({
+                id: z.string(),
+                identifier: z.string().nullish(),
+                title: z.string().nullish(),
+              })
+              .passthrough(),
+          ])
+          .nullish(),
+      })
+      .passthrough()
+      .nullish()
+      .catch(null),
     createdAt: z.string().nullish().catch(null),
     updatedAt: z.string().nullish().catch(null),
   })
@@ -194,6 +238,10 @@ export interface PaperclipIssueEvent {
   kind: "created" | "updated" | "deleted" | "unknown";
   issueId?: string;
   issue?: PaperclipIssue;
+  /** heartbeat run 摘要（type 为 heartbeat.run.* 且 payload 能解析时）。 */
+  run?: PaperclipRunSnapshot;
+  /** 任务评论（comment 事件能解析出正文时）。 */
+  comment?: PaperclipIssueComment;
   /** 原始事件 type 字符串（透传，便于排查）。 */
   rawType?: string;
   receivedAt: number;
@@ -220,7 +268,7 @@ export type PaperclipLocalServerState =
 
 export interface PaperclipLocalServerStatus {
   state: PaperclipLocalServerState;
-  /** 失败原因 / 平台策略提示（如 WSL 启动脚本缺失）。 */
+  /** 失败原因 / 平台策略提示（如未找到 npx）。 */
   detail?: string;
 }
 

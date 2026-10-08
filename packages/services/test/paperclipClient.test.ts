@@ -2,9 +2,29 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_PAPERCLIP_SERVER_URL,
+  derivePaperclipIssueProgress,
+  formatPaperclipElapsed,
+  filterPaperclipForest,
+  groupPaperclipIssues,
+  isPaperclipInteractionPending,
+  latestPaperclipRunForIssue,
+  mergePaperclipRuns,
+  normalizePaperclipComments,
+  normalizePaperclipInteractions,
   normalizePaperclipServerUrl,
+  paperclipAgentWorkload,
+  paperclipBlockerIds,
+  paperclipIssueNeedsHuman,
   paperclipIssueSchema,
+  paperclipOpenDescendantCount,
+  paperclipRunsForIssue,
+  parsePaperclipRunList,
+  readPaperclipLiveExtras,
   resolvePaperclipServerUrl,
+  selectPaperclipCommentIssueIds,
+  upsertPaperclipRun,
+  type PaperclipIssue,
+  type PaperclipRunSnapshot,
 } from "@zcode/shared";
 import { createServiceLogger } from "../src/logger/serviceLogger.js";
 import {
@@ -137,6 +157,153 @@ test("paperclipRestClient：HTTP 错误与网络错误归一化为 PaperclipApiE
       return true;
     },
   );
+});
+
+test("paperclip 进度：心跳与评论投影", () => {
+  const live = parsePaperclipRunList({
+    runs: [
+      {
+        id: "r-live",
+        status: "running",
+        agentId: "a1",
+        startedAt: "2026-10-08T01:00:00.000Z",
+        contextSnapshot: { issueId: "i1" },
+      },
+    ],
+  });
+  const recent = parsePaperclipRunList([
+    {
+      id: "r-live",
+      status: "queued",
+      issueId: "i1",
+      startedAt: "2026-10-08T01:00:00.000Z",
+      invocationSource: "assignment",
+    },
+    {
+      id: "r-old",
+      status: "failed",
+      issueId: "i2",
+      error: "adapter exited",
+      startedAt: "2026-10-08T00:00:00.000Z",
+      invocationSource: "assignment",
+    },
+  ]);
+  const merged = mergePaperclipRuns(live, recent);
+  const running = merged.find((run) => run.id === "r-live");
+  assert.equal(running?.status, "running");
+  assert.equal(running?.issueId, "i1");
+
+  const comments = normalizePaperclipComments({
+    comments: [
+      { id: "c1", body: "先看现状", createdAt: "2026-10-08T01:01:00.000Z", authorAgentId: "a1" },
+      { id: "c2", body: "改完校验", createdAt: "2026-10-08T01:02:00.000Z", authorAgentId: "a1" },
+    ],
+  });
+  assert.equal(comments[0]?.id, "c2");
+  assert.equal(comments[0]?.authorKind, "agent");
+
+  const progress = derivePaperclipIssueProgress({
+    status: "in_progress",
+    run: running ?? null,
+    comments,
+  });
+  assert.equal(progress.phase, "running");
+  assert.equal(progress.stageIndex, 1);
+  assert.equal(progress.latestComment?.body, "改完校验");
+
+  const failed = derivePaperclipIssueProgress({
+    status: "in_progress",
+    run: merged.find((run) => run.id === "r-old") ?? null,
+    comments: [],
+  });
+  assert.equal(failed.phase, "failed");
+  assert.equal(failed.run?.error, "adapter exited");
+
+  const queuedTodo = derivePaperclipIssueProgress({
+    status: "todo",
+    run: { ...live[0]!, status: "queued" },
+    comments: [],
+  });
+  assert.equal(queuedTodo.phase, "queued");
+  assert.equal(queuedTodo.stageIndex, 0);
+
+  const retry = derivePaperclipIssueProgress({
+    status: "in_progress",
+    run: { ...live[0]!, status: "scheduled_retry", startedAt: null },
+    comments: [],
+  });
+  assert.equal(retry.phase, "queued");
+  assert.equal(retry.stageIndex, 1);
+
+  const genericTrigger = parsePaperclipRunList([
+    {
+      id: "r-sys",
+      status: "running",
+      invocationSource: "assignment",
+      triggerDetail: "system",
+      contextSnapshot: { issueId: "i1" },
+    },
+  ]);
+  assert.equal(genericTrigger[0]?.detail, null);
+  assert.equal(genericTrigger[0]?.issueId, "i1");
+
+  assert.deepEqual(
+    selectPaperclipCommentIssueIds(
+      [
+        { id: "old", status: "done", updatedAt: "2026-10-08T02:00:00.000Z" },
+        { id: "hot", status: "in_progress", updatedAt: "2026-10-08T01:00:00.000Z" },
+      ],
+      live,
+    ),
+    ["i1", "hot"],
+  );
+
+  const extras = readPaperclipLiveExtras({
+    issueId: "i9",
+    run: { id: "r9", status: "running", startedAt: "2026-10-08T01:03:00.000Z" },
+  });
+  assert.equal(extras.run?.issueId, "i9");
+  assert.equal(extras.run?.status, "running");
+
+  // issue 行本身有 title，不能被误认成心跳。
+  assert.equal(
+    readPaperclipLiveExtras({ id: "i1", title: "Do it", status: "todo" }).run,
+    null,
+  );
+
+  assert.equal(formatPaperclipElapsed("2026-10-08T01:00:00.000Z", Date.parse("2026-10-08T01:02:05.000Z"), "zh-CN"), "2 分 5 秒");
+  assert.equal(formatPaperclipElapsed("2026-10-08T01:00:00.000Z", Date.parse("2026-10-08T01:02:05.000Z"), "en-US"), "2m 5s");
+});
+
+test("paperclipRestClient：live runs 与评论", async () => {
+  const fetchImpl = (async (url: RequestInfo | URL) => {
+    const { pathname } = new URL(String(url));
+    if (pathname.endsWith("/live-runs")) {
+      return jsonResponse([
+        {
+          id: "r1",
+          status: "running",
+          startedAt: "2026-10-08T01:00:00.000Z",
+          contextSnapshot: { issueId: "i1" },
+        },
+      ]);
+    }
+    if (pathname.endsWith("/comments")) {
+      return jsonResponse({ comments: [{ id: "c1", body: "doing it", createdAt: "2026-10-08T01:01:00.000Z" }] });
+    }
+    return jsonResponse({ error: "not found" }, 404);
+  }) as typeof fetch;
+  const client = createPaperclipRestClient({
+    resolveBaseUrl: () => "http://paperclip.test:3100",
+    resolveToken: () => null,
+    fetchImpl,
+    logger,
+  });
+  const runs = await client.listLiveRuns("c1");
+  assert.equal(runs[0]?.issueId, "i1");
+  assert.equal(runs[0]?.status, "running");
+  const comments = await client.listIssueComments("i1");
+  assert.equal(comments[0]?.body, "doing it");
 });
 
 test("paperclipIssueSchema：未知状态/优先级宽容回落", () => {
@@ -286,4 +453,192 @@ test("paperclipLiveEvents：认证拒绝不重试、普通断开退避重连", a
   assert.equal(retryDelays.length, 1);
 
   live.stop();
+});
+
+function issue(partial: {
+  id: string;
+  title?: string;
+  status?: PaperclipIssue["status"];
+  parentId?: string | null;
+  assigneeAgentId?: string | null;
+  blockedByIssueIds?: string[];
+  blockedBy?: PaperclipIssue["blockedBy"];
+  blockerAttention?: PaperclipIssue["blockerAttention"];
+}): PaperclipIssue {
+  return paperclipIssueSchema.parse({
+    id: partial.id,
+    title: partial.title ?? partial.id,
+    status: partial.status ?? "todo",
+    priority: "medium",
+    parentId: partial.parentId ?? null,
+    assigneeAgentId: partial.assigneeAgentId ?? null,
+    ...(partial.blockedByIssueIds ? { blockedByIssueIds: partial.blockedByIssueIds } : {}),
+    ...(partial.blockedBy ? { blockedBy: partial.blockedBy } : {}),
+    ...(partial.blockerAttention ? { blockerAttention: partial.blockerAttention } : {}),
+  });
+}
+
+function run(partial: Pick<PaperclipRunSnapshot, "id" | "status"> & Partial<PaperclipRunSnapshot>): PaperclipRunSnapshot {
+  return {
+    issueId: partial.issueId ?? null,
+    agentId: partial.agentId ?? null,
+    startedAt: partial.startedAt ?? null,
+    finishedAt: partial.finishedAt ?? null,
+    createdAt: partial.createdAt ?? null,
+    error: partial.error ?? null,
+    detail: partial.detail ?? null,
+    ...partial,
+  };
+}
+
+test("任务树：子任务挂在父任务下，缺父节点和环不会丢任务", () => {
+  const issues = [
+    issue({ id: "root", status: "in_progress" }),
+    issue({ id: "child", parentId: "root", status: "todo" }),
+    issue({ id: "done-child", parentId: "root", status: "done" }),
+    issue({ id: "grand", parentId: "child", status: "in_progress" }),
+    issue({ id: "orphan", parentId: "missing", status: "todo" }),
+    issue({ id: "a", parentId: "b", status: "todo" }),
+    issue({ id: "b", parentId: "a", status: "in_progress" }),
+  ];
+  const forest = groupPaperclipIssues(issues);
+  const ids = forest.map((node) => node.issue.id);
+  assert.deepEqual(ids, ["root", "orphan", "a"]);
+  const root = forest[0];
+  assert.equal(root?.children[0]?.issue.id, "child");
+  assert.equal(root?.children[0]?.children[0]?.issue.id, "grand");
+  assert.equal(root?.children[1]?.issue.id, "done-child");
+  assert.equal(forest.find((node) => node.issue.id === "a")?.children[0]?.issue.id, "b");
+  assert.equal(paperclipOpenDescendantCount("root", issues), 2);
+  assert.equal(paperclipOpenDescendantCount("child", issues), 1);
+  assert.equal(paperclipOpenDescendantCount("a", issues), 1);
+  const todos = filterPaperclipForest(forest, (entry) => entry.status === "todo");
+  assert.deepEqual(
+    todos.map((node) => node.issue.id),
+    ["root", "orphan", "a"],
+  );
+  assert.equal(todos[0]?.children[0]?.issue.id, "child");
+  assert.deepEqual(todos[0]?.children[0]?.children, []);
+});
+
+test("阻塞字段合并两条来源，并丢掉自己", () => {
+  const parsed = issue({
+    id: "i",
+    status: "blocked",
+    blockedByIssueIds: ["a", "i"],
+    blockedBy: ["b", { id: "c", identifier: "ZCO-3" }, { id: "a" }],
+  });
+  assert.deepEqual(paperclipBlockerIds(parsed), ["a", "b", "c"]);
+  const fromList = issue({
+    id: "blocked",
+    status: "blocked",
+    blockerAttention: {
+      directBlockerIssueId: "child",
+      terminalBlocker: { id: "child", identifier: "ZCO-4", title: "Child open" },
+      sampleBlockerIdentifier: "ZCO-4",
+    },
+  });
+  assert.deepEqual(paperclipBlockerIds(fromList), ["child"]);
+});
+
+test("交互：待处理的提问排在前面，连接意图不算等人", () => {
+  const list = normalizePaperclipInteractions({
+    interactions: [
+      { id: "a", status: "accepted", kind: "request_confirmation", payload: {} },
+      {
+        id: "b",
+        status: "pending",
+        kind: "ask_user_questions",
+        payload: {
+          questions: [
+            { id: "q1", prompt: "Go?", selectionMode: "single", options: [{ id: "yes", label: "Yes" }] },
+          ],
+        },
+      },
+      { id: "c", status: "pending", kind: "connection_intent" },
+    ],
+  });
+  assert.equal(list[0]?.id, "b");
+  assert.equal(isPaperclipInteractionPending(list[0]!), true);
+  assert.equal(list[0]?.questions[0]?.options[0]?.label, "Yes");
+  assert.equal(isPaperclipInteractionPending(list.find((item) => item.id === "c")!), false);
+  assert.equal(paperclipIssueNeedsHuman(list), true);
+  assert.equal(paperclipIssueNeedsHuman([list[1]!]), false);
+});
+
+test("等人处理覆盖进行中，不覆盖已完成", () => {
+  const waiting = derivePaperclipIssueProgress({
+    status: "in_progress",
+    run: null,
+    comments: [],
+    needsHuman: true,
+  });
+  assert.equal(waiting.phase, "needs_you");
+  assert.equal(waiting.stageIndex, 1);
+  const review = derivePaperclipIssueProgress({
+    status: "in_review",
+    run: null,
+    comments: [],
+    needsHuman: true,
+  });
+  assert.equal(review.phase, "needs_you");
+  assert.equal(review.stageIndex, 2);
+  const done = derivePaperclipIssueProgress({
+    status: "done",
+    run: null,
+    comments: [],
+    needsHuman: true,
+  });
+  assert.equal(done.phase, "done");
+});
+
+test("心跳历史保留失败记录，进度条仍用更新的重试", () => {
+  const failed = run({
+    id: "fail",
+    issueId: "i1",
+    status: "failed",
+    startedAt: "2026-10-08T03:00:00.000Z",
+    error: "boom",
+    detail: "boom",
+  });
+  const retry = run({
+    id: "retry",
+    issueId: "i1",
+    status: "scheduled_retry",
+    startedAt: "2026-10-08T02:00:00.000Z",
+  });
+  const runs = upsertPaperclipRun(upsertPaperclipRun([], failed), retry);
+  assert.deepEqual(
+    paperclipRunsForIssue(runs, "i1").map((item) => item.id),
+    ["fail", "retry"],
+  );
+  assert.equal(paperclipRunsForIssue(runs, "i1")[0]?.error, "boom");
+  assert.equal(latestPaperclipRunForIssue(runs, "i1")?.id, "retry");
+});
+
+test("agent 负载：正在跑的任务优先，待办和受阻进队列", () => {
+  const issues = [
+    issue({ id: "run", assigneeAgentId: "agent", status: "todo" }),
+    issue({ id: "prog", assigneeAgentId: "agent", status: "in_progress" }),
+    issue({ id: "todo", assigneeAgentId: "agent", status: "todo" }),
+    issue({ id: "blocked", assigneeAgentId: "agent", status: "blocked" }),
+    issue({ id: "review", assigneeAgentId: "agent", status: "in_review" }),
+    issue({ id: "done", assigneeAgentId: "agent", status: "done" }),
+    issue({ id: "other", assigneeAgentId: "other", status: "todo" }),
+  ];
+  const running = paperclipAgentWorkload("agent", issues, {
+    run: run({ id: "r", issueId: "run", status: "running" }),
+  });
+  assert.equal(running.current?.id, "run");
+  assert.deepEqual(
+    running.queue.map((item) => item.id),
+    ["todo", "blocked"],
+  );
+  const reviewing = paperclipAgentWorkload(
+    "agent",
+    issues.filter((item) => item.id === "review"),
+    {},
+  );
+  assert.equal(reviewing.current?.id, "review");
+  assert.deepEqual(reviewing.queue, []);
 });

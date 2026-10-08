@@ -4,6 +4,7 @@
    由服务层降级为 polling 态（REST 仍可用，UI 手动刷新）。 */
 import {
   paperclipIssueSchema,
+  readPaperclipLiveExtras,
   type PaperclipIssueEvent,
 } from "@zcode/shared";
 import type { ServiceLogger } from "../logger/serviceLogger.js";
@@ -234,10 +235,13 @@ function handleEventMessage(
       : normalizedType.includes("updat") || normalizedType.includes("status") || normalizedType.includes("comment")
         ? "updated"
         : "unknown";
+  const extras = readPaperclipLiveExtras(payload);
   emit({
     kind,
-    issueId,
+    issueId: extras.run?.issueId ?? issueId,
     ...(issueResult?.success ? { issue: issueResult.data } : {}),
+    ...(extras.run ? { run: extras.run } : {}),
+    ...(extras.comment ? { comment: extras.comment } : {}),
     rawType: type,
     receivedAt: Date.now(),
   });
