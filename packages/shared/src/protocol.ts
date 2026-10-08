@@ -372,4 +372,9 @@ export interface AppSettings {
    * 见 specs/services/paperclip-integration.md。
    */
   paperclipServerUrl?: string;
+  /**
+   * Paperclip 任务自动认领：指派给 ZCode（http agent）的新任务出现时，
+   * 自动认领并在对应工作区后台创建预填任务（不切换视图）。
+   */
+  paperclipAutoClaim?: boolean;
 }

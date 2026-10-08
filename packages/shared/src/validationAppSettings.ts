@@ -483,6 +483,7 @@ const appSettingsObjectSchema = z.object({
   settingsSyncFirstRunPromptHandled: z.boolean().optional(),
   zcodeEndpointOrigin: zcodeEndpointOriginSchema.optional(),
   paperclipServerUrl: paperclipServerUrlSchema.optional(),
+  paperclipAutoClaim: z.boolean().optional(),
 });
 
 export const appSettingsSchema = z.preprocess(
@@ -571,4 +572,5 @@ export const appSettingsPatchSchema = z.object({
   settingsSyncFirstRunPromptHandled: z.boolean().optional(),
   zcodeEndpointOrigin: zcodeEndpointOriginSchema.optional(),
   paperclipServerUrl: paperclipServerUrlSchema.optional(),
+  paperclipAutoClaim: z.boolean().optional(),
 });

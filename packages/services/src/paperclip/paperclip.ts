@@ -57,6 +57,16 @@ export interface IPaperclipService {
    */
   ensureDispatcherAgent(): Promise<PaperclipAgent>;
 
+  /**
+   * 确保 Paperclip 存在 ZCode 自主执行身份（http adapter 的 "ZCode" agent）。
+   * 该 agent 不被 Paperclip 驱动（无 heartbeat 执行体）：任务指派给它后由 ZCode
+   * 自行认领（board 代为 checkout 落账）、在 ZCode 本地执行并回写。幂等。
+   */
+  ensureZCodeAgent(): Promise<PaperclipAgent>;
+
+  /** 以 ZCode agent 身份认领任务（board 代为 checkout，checkoutAgentId 落账）。 */
+  claimIssueForZCode(issueId: string): Promise<PaperclipIssue>;
+
   /** 在公司内创建 agent（面板「添加本地 agent」入口；常规雇佣仍在 Paperclip UI）。 */
   createAgent(input: { name: string; adapterType: string; role?: string }): Promise<PaperclipAgent>;
 

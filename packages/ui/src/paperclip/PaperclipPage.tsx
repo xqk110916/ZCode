@@ -5,12 +5,17 @@
  * 未连接时显示引导（去设置配置 server 地址）；polling 降级态由状态条与轮询兜底。
  */
 import { useMemo, useState } from "react";
-import type { PaperclipAgent, PaperclipIssueStatus } from "@zcode/shared";
+import type { PaperclipAgent, PaperclipIssue, PaperclipIssueStatus } from "@zcode/shared";
 import { paperclipIssueNeedsHuman } from "@zcode/shared";
 import { toast } from "@/components/ui/toast.js";
+import { useSettings } from "@/hooks/useSettingService.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
 import { usePaperclip } from "@/paperclip/usePaperclip.js";
+import { usePaperclipAutoClaim } from "@/paperclip/usePaperclipAutoClaim.js";
+import { usePaperclipCreateSubmit } from "@/paperclip/usePaperclipCreateSubmit.js";
+import { PaperclipPendingBanner } from "@/paperclip/PaperclipPendingBanner.js";
+import { PaperclipDialogs } from "@/paperclip/PaperclipDialogs.js";
 import { PaperclipConnectionBar } from "@/paperclip/PaperclipConnectionBar.js";
 import { PaperclipDisconnectedState } from "@/paperclip/PaperclipDisconnectedState.js";
 import { agentDisplayName, statusLabelKey } from "@/paperclip/paperclipViews.js";
@@ -19,16 +24,6 @@ import {
   PaperclipIssueBoard,
   type PaperclipIssueFilter,
 } from "@/paperclip/PaperclipIssueBoard.js";
-import { PaperclipAgentConfigDialog } from "@/paperclip/PaperclipAgentConfigDialog.js";
-import { PaperclipAddAgentDialog } from "@/paperclip/PaperclipAddAgentDialog.js";
-import {
-  buildDispatchDescription,
-  EMPTY_CREATE_DIALOG_STATE,
-  PAPERCLIP_CURRENT_WORKSPACE_PROJECT,
-  PAPERCLIP_DISPATCH_ASSIGNEE,
-  PaperclipCreateTaskDialog,
-  type PaperclipCreateDialogState,
-} from "@/paperclip/PaperclipCreateTaskDialog.js";
 
 const STATUS_FILTERS: PaperclipIssueFilter[] = [
   "all",
@@ -47,23 +42,48 @@ const SETTLED_STATUSES: ReadonlySet<PaperclipIssueStatus> = new Set(["done", "ca
 export function PaperclipPage({
   onOpenSettings,
   workspacePath,
+  onExecuteInZCode,
+  onAutoExecuteInZCode,
 }: {
   onOpenSettings: () => void;
   /** 当前 ZCode 工作区绝对路径；创建任务可绑定为 Paperclip 项目工作区。 */
   workspacePath: string;
+  /**
+   * ZCode 自主执行的落地回调：认领成功后由外层创建本地 ZCode 任务
+   * （prompt 由外层从 issue 标题/描述拼装）。
+   */
+  onExecuteInZCode: (issue: PaperclipIssue) => void;
+  /**
+   * 自动认领的后台落地回调：在 targetWorkspacePath（任务绑定项目的工作区，
+   * null 时用活动工作区）创建预填任务，不切换视图、不抢活动标签。
+   */
+  onAutoExecuteInZCode: (issue: PaperclipIssue, targetWorkspacePath: string | null) => void;
 }) {
   const { intl, locale } = useZCodeIntl();
   const paperclip = usePaperclip();
+  const { settings, update: updateSettings } = useSettings();
   const [statusFilter, setStatusFilter] = useState<PaperclipIssueFilter>("all");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createState, setCreateState] =
-    useState<PaperclipCreateDialogState>(EMPTY_CREATE_DIALOG_STATE);
-  const [submitting, setSubmitting] = useState(false);
   const [configAgent, setConfigAgent] = useState<PaperclipAgent | null>(null);
   const [ensuringDispatcher, setEnsuringDispatcher] = useState(false);
   const [addAgentOpen, setAddAgentOpen] = useState(false);
   const [startingLocalServer, setStartingLocalServer] = useState(false);
   const [stoppingLocalServer, setStoppingLocalServer] = useState(false);
+  // 创建任务编排（提交/默认值/toast）见 usePaperclipCreateSubmit。
+  const {
+    submitting,
+    createOpen,
+    setCreateOpen,
+    createState,
+    setCreateState,
+    openCreateDialog,
+    submitCreate,
+  } = usePaperclipCreateSubmit({
+    workspacePath,
+    dispatcher: paperclip.dispatcher,
+    projects: paperclip.projects,
+    createIssue: paperclip.createIssue,
+    ensureProjectForWorkspace: paperclip.ensureProjectForWorkspace,
+  });
 
   const handleStartLocalServer = async () => {
     setStartingLocalServer(true);
@@ -98,10 +118,9 @@ export function PaperclipPage({
 
   const executingCount = useMemo(
     () =>
-      paperclip.issues.filter((issue) => {
-        const run = paperclip.runsByIssueId[issue.id];
-        return run?.status.toLowerCase() === "running";
-      }).length,
+      paperclip.issues.filter(
+        (issue) => paperclip.runsByIssueId[issue.id]?.status.toLowerCase() === "running",
+      ).length,
     [paperclip.issues, paperclip.runsByIssueId],
   );
 
@@ -112,16 +131,12 @@ export function PaperclipPage({
     [paperclip.projects, workspacePath],
   );
 
-  /** 打开创建对话框：主 Agent 存在时默认直接指派给它（用户可改选自动分派/其他
-   * agent/不指派）；当前工作区已注册为 Paperclip 项目时默认绑定它。 */
-  function openCreateDialog() {
-    setCreateState({
-      ...EMPTY_CREATE_DIALOG_STATE,
-      assigneeAgentId: paperclip.dispatcher ? paperclip.dispatcher.id : "",
-      projectId: currentWorkspaceProjectId ?? "",
+  // 打开创建对话框：默认指派主 Agent、绑定当前工作区项目（编排见 usePaperclipCreateSubmit）。
+  const openCreateTask = () =>
+    openCreateDialog({
+      dispatcherId: paperclip.dispatcher?.id ?? null,
+      currentWorkspaceProjectId,
     });
-    setCreateOpen(true);
-  }
 
   const statusCounts = useMemo(() => {
     const counts = new Map<PaperclipIssueStatus, number>();
@@ -131,68 +146,40 @@ export function PaperclipPage({
     return counts;
   }, [paperclip.issues]);
 
+  /** 「等你」= 有待处理的提问/确认交互，或待 ZCode 执行的未结任务（都是等你出手）。 */
   const needsYouCount = useMemo(
     () =>
-      paperclip.issues.filter((issue) =>
-        paperclipIssueNeedsHuman(paperclip.interactionsByIssueId[issue.id]),
+      paperclip.issues.filter(
+        (issue) =>
+          paperclipIssueNeedsHuman(paperclip.interactionsByIssueId[issue.id]) ||
+          (paperclip.zcodeAgent !== null &&
+            issue.assigneeAgentId === paperclip.zcodeAgent.id &&
+            !SETTLED_STATUSES.has(issue.status)),
       ).length,
-    [paperclip.issues, paperclip.interactionsByIssueId],
+    [paperclip.issues, paperclip.interactionsByIssueId, paperclip.zcodeAgent],
   );
 
-  const connectionState = paperclip.connection?.state ?? "connecting";
-
-  async function submitCreate() {
-    if (!createState.title.trim() || submitting) return;
-    // 「当前工作区」且尚未注册时，先确保 Paperclip 项目存在（local_path 工作区）。
-    let projectId = createState.projectId;
-    if (projectId === PAPERCLIP_CURRENT_WORKSPACE_PROJECT && workspacePath) {
-      const project = await paperclip.ensureProjectForWorkspace({
-        // 项目名取工作区目录名（Paperclip 项目重名可共存，按 cwd 幂等匹配）。
-        name: workspacePath.split("/").filter(Boolean).pop() ?? workspacePath,
-        cwd: workspacePath,
-      });
-      if (!project) {
-        // ensureProjectForWorkspace 已把原因写进 actionError；中止提交。
-        return;
-      }
-      projectId = project.id;
-    }
-    setSubmitting(true);
-    const dispatcher = paperclip.dispatcher;
-    const autoDispatch =
-      createState.assigneeAgentId === PAPERCLIP_DISPATCH_ASSIGNEE && dispatcher !== null;
-    const ok = await paperclip.createIssue({
-      title: createState.title.trim(),
-      // 自动分派：指令模板随描述一起提交（对话框中有提示，用户可见可预期）。
-      ...(autoDispatch
-        ? { description: buildDispatchDescription(createState.description) }
-        : createState.description.trim() === ""
-          ? {}
-          : { description: createState.description.trim() }),
-      priority: createState.priority,
-      ...(projectId === "" ? {} : { projectId }),
-      ...(autoDispatch
-        ? { assigneeAgentId: dispatcher.id }
-        : createState.assigneeAgentId === "" ||
-            createState.assigneeAgentId === PAPERCLIP_DISPATCH_ASSIGNEE
-          ? {}
-          : { assigneeAgentId: createState.assigneeAgentId }),
+  /** 认领并带到本地执行（任务行按钮与顶部横幅共用）。 */
+  function executeIssueInZCode(issueId: string) {
+    const issue = paperclip.issues.find((entry) => entry.id === issueId);
+    if (!issue) return;
+    void paperclip.executeInZCode(issue, (claimed) => {
+      onExecuteInZCode(claimed);
+      toast(intl.formatMessage({ id: "paperclip.toast.claimedByZCode" }));
     });
-    setSubmitting(false);
-    if (ok) {
-      setCreateOpen(false);
-      setCreateState(EMPTY_CREATE_DIALOG_STATE);
-      // 创建成功的轻反馈：自动分派时说明交给谁调度，手动指派时说明唤醒谁。
-      toast(
-        autoDispatch
-          ? intl.formatMessage(
-              { id: "paperclip.toast.createdAuto" },
-              { name: agentDisplayName(dispatcher) },
-            )
-          : intl.formatMessage({ id: "paperclip.toast.created" }),
-      );
-    }
   }
+
+  // 自动认领（差分 + sessionStorage 防重，实现见 usePaperclipAutoClaim）。
+  const { pendingCount: zcodePendingCount } = usePaperclipAutoClaim({
+    enabled: settings?.paperclipAutoClaim === true,
+    issues: paperclip.issues,
+    zcodeAgent: paperclip.zcodeAgent,
+    projects: paperclip.projects,
+    executeInZCode: paperclip.executeInZCode,
+    onAutoExecute: onAutoExecuteInZCode,
+  });
+
+  const connectionState = paperclip.connection?.state ?? "connecting";
 
   if (!paperclip.serviceAvailable) {
     return (
@@ -225,8 +212,28 @@ export function PaperclipPage({
         stoppingLocalServer={stoppingLocalServer}
         onStopLocalServer={() => void handleStopLocalServer()}
         onRefresh={() => void paperclip.refresh()}
-        onCreateTask={openCreateDialog}
+        onCreateTask={openCreateTask}
       />
+
+      {/* 待 ZCode 执行横幅（含自动认领开关与「执行下一个」）。 */}
+      {zcodePendingCount > 0 ? (
+        <PaperclipPendingBanner
+          count={zcodePendingCount}
+          autoClaim={settings?.paperclipAutoClaim === true}
+          onAutoClaimChange={(checked) => {
+            void updateSettings({ paperclipAutoClaim: checked });
+          }}
+          onViewPending={() => setStatusFilter("needs_you")}
+          onExecuteNext={() => {
+            const next = paperclip.issues.find(
+              (issue) =>
+                issue.assigneeAgentId === paperclip.zcodeAgent?.id &&
+                !SETTLED_STATUSES.has(issue.status),
+            );
+            if (next) executeIssueInZCode(next.id);
+          }}
+        />
+      ) : null}
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
       <PaperclipAgentList
@@ -303,6 +310,8 @@ export function PaperclipPage({
           locale={locale}
           issues={paperclip.issues}
           agents={paperclip.agents}
+          zcodeAgentId={paperclip.zcodeAgent?.id ?? null}
+          onExecuteInZCode={executeIssueInZCode}
           runsByIssueId={paperclip.runsByIssueId}
           runHistoryByIssueId={paperclip.runHistoryByIssueId}
           commentsByIssueId={paperclip.commentsByIssueId}
@@ -333,65 +342,22 @@ export function PaperclipPage({
       </section>
       </div>
 
-      <PaperclipCreateTaskDialog
-        open={createOpen}
-        agents={paperclip.agents}
-        dispatcher={paperclip.dispatcher}
-        projects={paperclip.projects}
+      <PaperclipDialogs
+        paperclip={paperclip}
         workspacePath={workspacePath}
         currentWorkspaceProjectId={currentWorkspaceProjectId}
+        createOpen={createOpen}
+        setCreateOpen={setCreateOpen}
+        createState={createState}
+        setCreateState={setCreateState}
         submitting={submitting}
+        submitCreate={() => void submitCreate()}
         ensuringDispatcher={ensuringDispatcher}
-        state={createState}
-        onStateChange={setCreateState}
-        onOpenChange={setCreateOpen}
-        onSubmit={() => void submitCreate()}
-        onEnsureDispatcher={() => {
-          setEnsuringDispatcher(true);
-          void paperclip.ensureDispatcher().finally(() => setEnsuringDispatcher(false));
-        }}
-      />
-
-      <PaperclipAgentConfigDialog
-        agent={configAgent}
-        open={configAgent !== null}
-        onOpenChange={(open) => {
-          if (!open) setConfigAgent(null);
-        }}
-        loadAdapterModels={paperclip.loadAdapterModels}
-        discoverClaudeModels={paperclip.discoverClaudeModels}
-        isDispatcher={configAgent?.id === paperclip.dispatcher?.id}
-        onSetDispatcher={paperclip.setDispatcher}
-        onSave={paperclip.updateAgent}
-      />
-
-      <PaperclipAddAgentDialog
-        open={addAgentOpen}
-        onOpenChange={setAddAgentOpen}
-        detectLocalAgentAdapters={paperclip.detectLocalAgentAdapters}
-        existingAdapterTypes={
-          new Set(
-            paperclip.agents.flatMap((agent) =>
-              agent.adapterType ? [agent.adapterType] : [],
-            ),
-          )
-        }
-        onCreate={async (input) => {
-          // 团队还没有主 Agent 时，新增的第一个 agent 默认成为主 Agent（调度负责人）。
-          const ok = await paperclip.createAgent({
-            ...input,
-            ...(paperclip.dispatcher ? {} : { role: "ceo" }),
-          });
-          if (ok) {
-            toast(
-              intl.formatMessage(
-                { id: "paperclip.addAgent.created" },
-                { name: input.name },
-              ) + (paperclip.dispatcher ? "" : intl.formatMessage({ id: "paperclip.addAgent.becameDispatcher" })),
-            );
-          }
-          return ok;
-        }}
+        setEnsuringDispatcher={setEnsuringDispatcher}
+        configAgent={configAgent}
+        setConfigAgent={setConfigAgent}
+        addAgentOpen={addAgentOpen}
+        setAddAgentOpen={setAddAgentOpen}
       />
     </div>
   );

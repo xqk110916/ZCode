@@ -30,12 +30,15 @@ interface BoardModel {
   locale: string;
   issues: readonly PaperclipIssue[];
   agents: readonly PaperclipAgent[];
+  /** ZCode 自主执行身份（http agent）id；指派给它的任务行显示「在 ZCode 中执行」。 */
+  zcodeAgentId: string | null;
   runsByIssueId: Readonly<Record<string, PaperclipRunSnapshot | undefined>>;
   runHistoryByIssueId: Readonly<Record<string, readonly PaperclipRunSnapshot[] | undefined>>;
   commentsByIssueId: Readonly<Record<string, readonly PaperclipIssueComment[] | undefined>>;
   interactionsByIssueId: Readonly<Record<string, readonly PaperclipInteraction[] | undefined>>;
   onOpen: (issueId: string) => void;
   onMarkDone: (issueId: string) => void;
+  onExecuteInZCode: (issueId: string) => void;
   onAcceptReview: (issueId: string, comment: string) => Promise<boolean>;
   onSendBack: (issueId: string, comment: string) => Promise<boolean>;
   onReply: (issueId: string, body: string) => Promise<boolean>;
@@ -96,6 +99,15 @@ function IssueBranch({ node, model }: { node: PaperclipIssueTreeNode; model: Boa
         blockerLabels={paperclipBlockerIds(issue).map((id) => blockerLabel(id, model.issues))}
         onMarkDone={() => model.onMarkDone(issue.id)}
         onOpen={() => model.onOpen(issue.id)}
+        onExecuteInZCode={
+          issue.assigneeAgentId !== null &&
+          issue.assigneeAgentId === model.zcodeAgentId
+            ? () => model.onExecuteInZCode(issue.id)
+            : undefined
+        }
+        zcodeAgentOwned={
+          issue.assigneeAgentId !== null && issue.assigneeAgentId === model.zcodeAgentId
+        }
         onReply={(body) => model.onReply(issue.id, body)}
         onAcceptReview={(comment) => model.onAcceptReview(issue.id, comment)}
         onSendBack={(comment) => model.onSendBack(issue.id, comment)}
@@ -131,11 +143,16 @@ export function PaperclipIssueBoard({
         ? grouped
         : filterPaperclipForest(grouped, (issue) =>
             filter === "needs_you"
-              ? paperclipIssueNeedsHuman(model.interactionsByIssueId[issue.id])
+              ? // 「等你」= 待处理的提问/确认交互，或待 ZCode 执行的未结任务
+                // （zcodeAgent 名下未结即等你认领出手）。
+                paperclipIssueNeedsHuman(model.interactionsByIssueId[issue.id]) ||
+                (model.zcodeAgentId !== null &&
+                  issue.assigneeAgentId === model.zcodeAgentId &&
+                  !paperclipIssueSettled(issue.status))
               : issue.status === filter,
           );
     return sortForest(filtered);
-  }, [model.issues, model.interactionsByIssueId, filter]);
+  }, [model.issues, model.interactionsByIssueId, model.zcodeAgentId, filter]);
 
   if (forest.length === 0) {
     if (loading) {

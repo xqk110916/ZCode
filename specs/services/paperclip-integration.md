@@ -219,3 +219,48 @@ UI（`packages/ui/src/paperclip/`）：`PaperclipPage` 主视图（`WorkspaceMai
 12. 模型发现：本机 Claude Code 配置了第三方网关时，配置弹窗顶部展示「本机网关」
     分组的真实模型（实测 11 个 GLM）；未配置/失败时仅显示 Paperclip 静态清单，
     手动输入仍可保存任意模型 ID。
+
+## ZCode 自主执行模式（`ensureZCodeAgent` / `claimIssueForZCode` / `executeInZCode`）
+
+ZCode 不作为被 Paperclip 驱动的 adapter（无 heartbeat 执行体、不 spawn 子进程），
+而是 Paperclip 的**自主执行端**：Paperclip 只做任务账本，执行与进度完全由 ZCode
+把控。身份 = 公司内 `adapterType === "http"` 的 agent（名为 "ZCode"，公司内唯一，
+`ensureZCodeAgent` 幂等创建/命中，**创建后自动 pause**）。
+
+事件顺序：任务指派给 ZCode agent → 面板任务行显示「在 ZCode 中执行」→ 点击后
+`claimIssueForZCode`（board 身份 `POST /issues/{id}/checkout`，CAS 语义
+`expectedStatuses: [todo, in_progress, blocked]`，成功后 status → in_progress）→
+认领成功回调外层创建本地 ZCode 任务（prompt = 标题+描述，切回聊天主视图）→
+执行全程在 ZCode（用户可见可插话）→ 完成后经既有 board 写路径回写（markDone /
+评论）。
+
+实测依据（写入前验证过）：
+
+- agent API key 直写 issue 需要真实 heartbeat run 上下文（自造 runId 返回 401
+  "Cross-issue writes need a run"）——run 只能由 Paperclip 的 webhook 唤醒产生，
+  桌面形态无常驻端口，故 V1 不走 agent key；认领与回写均为 board 代操作（本地
+  部署 board 即用户本人，审计记 board 名下）。
+- checkout body 必须带 `{agentId, expectedStatuses}`；checkout 是临时检出（绑
+  run、结束释放），**没有持久认领人字段**——认领身份即 assignee，效果是状态
+  转 in_progress。
+- 未配 webhook 的 http agent 会被 heartbeat 反复执行失败并把任务标 blocked
+  （实测 statusVersion 递增），因此 ensure 后必须 pause 该 agent 暂停心跳。
+
+边界：ZCode agent 的 Paperclip 状态灯恒为「自主执行」（paused 的模式语义，非异常）；
+本地任务与 issue 的映射不做持久化，回写由用户在面板确认（markDone 带摘要评论）。
+
+**自动认领**（`AppSettings.paperclipAutoClaim`，设置分区与待办横幅均有开关）：开启后
+面板对"新出现"的待 ZCode 执行任务自动认领，并在任务绑定项目对应的工作区（未打开
+则活动工作区）后台自动执行：`startDraft` + 草稿事实源预填（降级保障）→ 等 v4 预热
+握手写入 `draftSessionId` → 经 `IZCodeTaskService.sendPrompt` 自动发送（与
+`zcode send` / local-send 完全同一条 admission 链：空闲开新轮、忙碌排队；见
+`specs/server/local-session-send.md`）。不 `focusWorkspace`、不切视图、不抢活动
+标签；预热 10s 未就绪或发送失败均降级为预填草稿（用户手动发送），不打断用户。
+防重两级：内存 Set + sessionStorage（`paperclip-auto-claimed`），只处理差分新出现
+的任务；已在场的任务留给用户手动。
+
+13. ZCode 自主执行：指派给 ZCode（http agent）的任务出现「在 ZCode 中执行」；
+    点击后该 issue 状态原子转 in_progress（CAS：他人已认领/状态漂移时报冲突），
+    ZCode 创建本地任务并切到聊天视图；完成后点「完成」回写 done + 摘要评论。
+    ZCode agent 在 Paperclip 侧保持「已暂停」（不被 heartbeat 驱动，任务不会被
+    误标 blocked）。

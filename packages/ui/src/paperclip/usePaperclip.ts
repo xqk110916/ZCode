@@ -36,6 +36,8 @@ export interface UsePaperclipState {
   agents: PaperclipAgent[];
   /** 自动分派的 dispatcher（role==="ceo" 的第一个 agent；无则 null）。 */
   dispatcher: PaperclipAgent | null;
+  /** ZCode 自主执行身份（http adapter 的 agent）；指派给它的任务在 ZCode 本地执行。 */
+  zcodeAgent: PaperclipAgent | null;
   issues: PaperclipIssue[];
   loadingIssues: boolean;
   /** 当次操作（创建/更新）失败的可读原因；成功后清空。 */
@@ -80,6 +82,14 @@ export interface UsePaperclipState {
   loadIssueThread: (issueId: string) => Promise<void>;
   /** 给人回复 agent。评论会唤醒 assignee。 */
   replyToIssue: (issueId: string, body: string) => Promise<boolean>;
+  /**
+   * 以 ZCode 身份认领任务并交本地执行：认领成功后回调 onClaimed（由外层创建
+   * ZCode 本地任务）；执行与进度完全由 ZCode 把控，完成后经 markDone/评论回写。
+   */
+  executeInZCode: (
+    issue: PaperclipIssue,
+    onClaimed: (issue: PaperclipIssue) => void,
+  ) => Promise<boolean>;
   /** 状态交接：审查通过、打回。comment 与状态同一请求提交。 */
   transitionIssue: (
     issueId: string,
@@ -255,11 +265,17 @@ export function usePaperclip(): UsePaperclipState {
     [agents],
   );
 
+  const zcodeAgent = useMemo(
+    () => agents.find((agent) => agent.adapterType === "http") ?? null,
+    [agents],
+  );
+
   return {
     serviceAvailable: paperclipService !== undefined,
     connection,
     agents,
     dispatcher,
+    zcodeAgent,
     issues,
     loadingIssues,
     actionError,
@@ -285,6 +301,7 @@ export function usePaperclip(): UsePaperclipState {
     interactionsByIssueId: activity.interactionsByIssueId,
     loadIssueThread: activity.loadIssueThread,
     replyToIssue: actions.replyToIssue,
+    executeInZCode: actions.executeInZCode,
     transitionIssue: actions.transitionIssue,
     acceptInteraction: actions.acceptInteraction,
     rejectInteraction: actions.rejectInteraction,

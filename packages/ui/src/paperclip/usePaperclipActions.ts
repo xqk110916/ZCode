@@ -7,6 +7,7 @@ import type {
   PaperclipAdapterModel,
   PaperclipAgent,
   PaperclipCreateIssueInput,
+  PaperclipIssue,
   PaperclipIssueEvent,
   PaperclipIssueStatus,
   PaperclipLocalAdapterCandidate,
@@ -170,20 +171,52 @@ export function usePaperclipActions(input: {
   }, [paperclipService, setActionError, setAgents]);
 
   /**
-   * 切换主 Agent（调度负责人）：新 agent 置 ceo，原主 Agent 回落 general。
-   * Paperclip 侧 ceo 唯一，一次 PATCH 后本地把其余 ceo 收成 general；失败时错误留在 actionError。
+   * ZCode 自主执行：以 ZCode 身份认领（board 代 checkout 落账）→ 回调外层在
+   * ZCode 本地创建任务。执行与进度由 ZCode 把控；完成后走 markDone/评论回写。
+   * 认领成功即视为接管（本地 issue 投影更新为最新服务端事实）。
+   */
+  const executeInZCode = useCallback(
+    async (issue: PaperclipIssue, onClaimed: (issue: PaperclipIssue) => void) => {
+      if (!paperclipService) return false;
+      setActionError(null);
+      try {
+        const claimed = await paperclipService.claimIssueForZCode(issue.id);
+        mergeIssueEvent({ kind: "updated", issue: claimed, receivedAt: Date.now() });
+        onClaimed(claimed);
+        return true;
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : String(error));
+        return false;
+      }
+    },
+    [paperclipService, setActionError, mergeIssueEvent],
+  );
+
+  /**
+   * 切换主 Agent（调度负责人）：新 agent 置 ceo，其余 ceo 显式降回 general。
+   * 实测 Paperclip 仅在创建时约束 ceo 唯一——PATCH 不受限，旧 ceo 不会自动降级，
+   * 因此必须两步写：升新 → 刷新列表 → 降旧。降级失败的行保留服务端事实（仍显示
+   * ceo），再点一次切换即可收敛；本地状态始终以服务端响应为准。
    */
   const setDispatcher = useCallback(
     async (agentId: string) => {
       if (!paperclipService) return false;
       setActionError(null);
       try {
-        const next = await paperclipService.updateAgent(agentId, { role: "ceo" });
-        setAgents((current) =>
-          current.map((agent) =>
-            agent.id === next.id ? next : agent.role === "ceo" ? { ...agent, role: "general" } : agent,
+        await paperclipService.updateAgent(agentId, { role: "ceo" });
+        const refreshed = await paperclipService.listAgents();
+        const staleLeads = refreshed.filter(
+          (agent) => agent.role === "ceo" && agent.id !== agentId,
+        );
+        const demoted: PaperclipAgent[] = await Promise.all(
+          staleLeads.map((agent) =>
+            paperclipService.updateAgent(agent.id, { role: "general" }).catch(() => agent),
           ),
         );
+        const demotedById = new Map<string, PaperclipAgent>(
+          demoted.map((agent) => [agent.id, agent]),
+        );
+        setAgents(() => refreshed.map((agent) => demotedById.get(agent.id) ?? agent));
         return true;
       } catch (error) {
         setActionError(error instanceof Error ? error.message : String(error));
@@ -296,6 +329,7 @@ export function usePaperclipActions(input: {
     markDone,
     transitionIssue,
     replyToIssue,
+    executeInZCode,
     acceptInteraction,
     rejectInteraction,
     respondInteraction,

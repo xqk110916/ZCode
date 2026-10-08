@@ -2,15 +2,11 @@
    组合 REST 客户端与 live-events WS：配置现读（settings + credential），URL 变更后
    下一次调用自动重建连接（companyId 缓存与 URL 绑定）；WS 认证拒绝或断开时降级
    polling（REST 仍可用），重连成功自动恢复 connected。 */
-import { execFileSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { Emitter } from "@zcode/rpc";
 import {
   mergePaperclipRuns,
   resolvePaperclipServerUrl,
-  type PaperclipAdapterModel,
+  type PaperclipAgent,
   type PaperclipConnectionState,
   type PaperclipConnectionStateSnapshot,
   type PaperclipIssueEvent,
@@ -28,6 +24,8 @@ import {
   type PaperclipRestClient,
 } from "./paperclipRestClient.js";
 import { createPaperclipLiveEvents, type PaperclipLiveEvents } from "./paperclipLiveEvents.js";
+import { discoverClaudeModels as discoverClaudeModelsImpl } from "./paperclipModelDiscovery.js";
+import { detectLocalAgentAdapters as detectLocalAgentAdaptersImpl } from "./paperclipAdapters.js";
 import {
   createPaperclipLocalServerController,
   type PaperclipLocalServerDeps,
@@ -35,39 +33,6 @@ import {
 
 /** Bearer token 在 ICredentialService 的存储键。 */
 export const PAPERCLIP_TOKEN_CREDENTIAL_KEY = "paperclip-api-token";
-
-/** 本机 CLI → Paperclip local adapter 候选表（「添加本地 agent」入口）。 */
-const LOCAL_ADAPTER_CLI_CANDIDATES: ReadonlyArray<{
-  adapterType: string;
-  cliName: string;
-}> = [
-  { adapterType: "claude_local", cliName: "claude" },
-  { adapterType: "kimi_local", cliName: "kimi" },
-  { adapterType: "grok_local", cliName: "grok" },
-  { adapterType: "codex_local", cliName: "codex" },
-  { adapterType: "gemini_local", cliName: "gemini" },
-  { adapterType: "opencode_local", cliName: "opencode" },
-];
-
-/** 第三方模型发现缓存（60s TTL；存模型清单，不存凭证）。 */
-let claudeModelDiscoveryCache: { models: PaperclipAdapterModel[]; expiresAt: number } | null =
-  null;
-
-/** 读取本机 Claude Code settings.json 的 env 段（失败返回空表）。 */
-async function readClaudeCodeEnv(): Promise<Map<string, string>> {
-  try {
-    const raw = await readFile(join(homedir(), ".claude", "settings.json"), "utf8");
-    const parsed = JSON.parse(raw) as { env?: Record<string, unknown> };
-    const env = parsed.env ?? {};
-    const result = new Map<string, string>();
-    for (const [key, value] of Object.entries(env)) {
-      if (typeof value === "string" && value.trim()) result.set(key, value.trim());
-    }
-    return result;
-  } catch {
-    return new Map();
-  }
-}
 
 export interface PaperclipServiceFactoryDeps {
   settingService: ISettingService;
@@ -199,10 +164,54 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
     return await fn(companyId);
   }
 
+  /** 幂等 ensure 骨架：命中即返回；创建撞唯一约束（4xx）时回读既有。 */
+  async function ensureUnique<T>(
+    list: () => Promise<T[]>,
+    match: (item: T) => boolean,
+    create: () => Promise<T>,
+  ): Promise<T> {
+    const existing = (await list()).find(match);
+    if (existing) return existing;
+    try {
+      return await create();
+    } catch (error) {
+      if (error instanceof PaperclipApiError && error.httpStatus >= 400 && error.httpStatus < 500) {
+        const raced = (await list()).find(match);
+        if (raced) return raced;
+      }
+      throw error;
+    }
+  }
+
+  async function pauseAgentQuietly(agent: PaperclipAgent): Promise<PaperclipAgent> {
+    if (agent.status === "paused") return agent;
+    try {
+      return await rest.pauseAgent(agent.id);
+    } catch (error) {
+      logger.warn(undefined, "paperclip zcode agent pause failed", { agentId: agent.id });
+      void error;
+      return agent;
+    }
+  }
+
+  /** ZCode 自主执行身份（http agent，公司内唯一）；创建/命中后自动 pause 暂停心跳
+   *（防 heartbeat 反复执行失败把任务标 blocked，见 spec「ZCode 自主执行模式」）。 */
+  async function ensureZCodeAgentInternal(): Promise<PaperclipAgent> {
+    const companyId = await ensureReady();
+    const match = (agent: PaperclipAgent) => agent.adapterType === "http";
+    const agent = await ensureUnique(
+      () => rest.listAgents(companyId),
+      match,
+      () => rest.createAgent(companyId, { name: "ZCode", adapterType: "http" }),
+    );
+    // pause 失败不阻断：agent 已存在，下次 ensure 会重试 pause。
+    return pauseAgentQuietly(agent);
+  }
+
   const localServer = createPaperclipLocalServerController({
     resolveBaseUrl,
     ...(deps.fetchImpl === undefined ? {} : { fetchImpl: deps.fetchImpl }),
-    ...(deps.localServerDeps ?? {}),
+    ...deps.localServerDeps,
   } satisfies PaperclipLocalServerDeps);
 
   const rest = buildRestClient();
@@ -278,27 +287,20 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
 
     deleteAgent: (agentId) => rest.deleteAgent(agentId),
 
-    async ensureDispatcherAgent() {
-      const companyId = await ensureReady();
-      const agents = await rest.listAgents(companyId);
-      const existing = agents.find((agent) => agent.role === "ceo");
-      if (existing) return existing;
-      // 竞态兜底：并发两次 ensure 时后者撞唯一 CEO 约束（409/422），回读取既有。
-      try {
-        return await rest.createAgent(companyId, {
-          name: "Dispatcher",
-          adapterType: "claude_local",
-          role: "ceo",
-        });
-      } catch (error) {
-        if (error instanceof PaperclipApiError && error.httpStatus >= 400 && error.httpStatus < 500) {
-          const agentsAfter = await rest.listAgents(companyId);
-          const raced = agentsAfter.find((agent) => agent.role === "ceo");
-          if (raced) return raced;
-        }
-        throw error;
-      }
-    },
+    // 幂等 ensure：命中 role=ceo 即返回，创建撞唯一约束回读（骨架见 ensureUnique）。
+    ensureDispatcherAgent: () =>
+      withCompanyId((companyId) =>
+        ensureUnique(
+          () => rest.listAgents(companyId),
+          (agent) => agent.role === "ceo",
+          () =>
+            rest.createAgent(companyId, {
+              name: "Dispatcher",
+              adapterType: "claude_local",
+              role: "ceo",
+            }),
+        ),
+      ),
 
     async createAgent(input) {
       return withCompanyId(async (companyId) => {
@@ -315,92 +317,30 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
       });
     },
 
-    async discoverClaudeModels() {
-      // Claude Code 走第三方代理时，Paperclip 的静态模型清单（官方 opus/sonnet 等）
-      // 与实际可用模型不符；这里读本机 Claude Code 配置的网关端点，直接拉真实清单。
-      // 凭证只用于向其配置的端点发起请求，不落日志、不持久化。
-      const cached = claudeModelDiscoveryCache;
-      if (cached && cached.expiresAt > Date.now()) return cached.models;
-      const settings = await readClaudeCodeEnv();
-      const baseUrl = settings.get("ANTHROPIC_BASE_URL");
-      const token = settings.get("ANTHROPIC_AUTH_TOKEN") ?? settings.get("ANTHROPIC_API_KEY");
-      if (!baseUrl || !token) return [];
-      const authHeader = settings.has("ANTHROPIC_AUTH_TOKEN")
-        ? { authorization: `Bearer ${token}` }
-        : { "x-api-key": token };
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5_000);
-      try {
-        const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/v1/models`, {
-          headers: { "anthropic-version": "2023-06-01", ...authHeader },
-          signal: controller.signal,
-        });
-        if (!response.ok) return [];
-        const payload = (await response.json()) as { data?: unknown };
-        const list = Array.isArray(payload.data) ? payload.data : [];
-        const models = list.flatMap((item): PaperclipAdapterModel[] => {
-          if (!item || typeof item !== "object") return [];
-          const record = item as { id?: unknown; display_name?: unknown };
-          if (typeof record.id !== "string" || !record.id.trim()) return [];
-          return [
-            {
-              id: record.id,
-              ...(typeof record.display_name === "string" && record.display_name.trim()
-                ? { label: record.display_name }
-                : {}),
-            },
-          ];
-        });
-        if (models.length === 0) return [];
-        claudeModelDiscoveryCache = { models, expiresAt: Date.now() + 60_000 };
-        return models;
-      } catch {
-        return [];
-      } finally {
-        clearTimeout(timer);
-      }
+    async ensureZCodeAgent() {
+      return ensureZCodeAgentInternal();
     },
+
+    // board 代 ZCode 认领：agent 身份直写需真实 run 上下文（实测 401），自主模式
+    // 刻意不走 Paperclip 驱动，进度/完成回写同理走 board 写路径。
+    claimIssueForZCode: async (issueId) =>
+      rest.checkoutIssue(issueId, (await ensureZCodeAgentInternal()).id),
+
+    // 第三方网关模型发现实现见 paperclipModelDiscovery.ts（行数控制拆分）。
+    discoverClaudeModels: () => discoverClaudeModelsImpl(),
 
     listProjects: () => withCompanyId((companyId) => rest.listProjects(companyId)),
 
     async ensureProjectForWorkspace(input) {
       const companyId = await ensureReady();
-      const projects = await rest.listProjects(companyId);
-      const existing = projects.find(
+      return ensureUnique(
+        () => rest.listProjects(companyId),
         (project) => project.codebase?.localFolder === input.cwd,
+        () => rest.createProject(companyId, input),
       );
-      if (existing) return existing;
-      // 撞重名/并发创建时按上游错误回读一次（与 ensureDispatcher 同口径）。
-      try {
-        return await rest.createProject(companyId, input);
-      } catch (error) {
-        if (error instanceof PaperclipApiError && error.httpStatus >= 400 && error.httpStatus < 500) {
-          const projectsAfter = await rest.listProjects(companyId);
-          const raced = projectsAfter.find(
-            (project) => project.codebase?.localFolder === input.cwd,
-          );
-          if (raced) return raced;
-        }
-        throw error;
-      }
     },
 
-    async detectLocalAgentAdapters() {
-      // PATH 探测用宿主命令（win32 用 where，其余用 which）。which/where 找不到命令时
-      // 以非零退出码抛错、不抛即存在；不能用返回值判断——stdio ignore 时它恒为 null
-      // （曾因此把所有已装 CLI 误报为「未检测到」）。
-      const command = process.platform === "win32" ? "where" : "which";
-      return LOCAL_ADAPTER_CLI_CANDIDATES.map((candidate) => {
-        let available = false;
-        try {
-          execFileSync(command, [candidate.cliName], { stdio: "ignore" });
-          available = true;
-        } catch {
-          available = false;
-        }
-        return { ...candidate, available };
-      });
-    },
+    detectLocalAgentAdapters: () => Promise.resolve(detectLocalAgentAdaptersImpl()),
 
     listIssues: (filter) =>
       withCompanyId((companyId) => rest.listIssues(companyId, filter)),

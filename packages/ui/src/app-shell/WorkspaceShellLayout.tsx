@@ -95,6 +95,7 @@ import {
 import type { WorkspaceShellLayoutProps } from "@/app-shell/types.js";
 import { useTabStoreApi } from "@/store/TabStoreProvider.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
+import { persistV4ComposerDraft, V4_DRAFT_SCOPE_ROOT } from "@/v4/composer/composerDraftStore.js";
 import type { ComposerMentionPrefill } from "@/store/zcodeSessionStoreTypes.js";
 
 const WORKSPACE_SIDEBAR_DEFAULT_WIDTH_PX = 264;
@@ -1850,6 +1851,73 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                                   <PaperclipPage
                                     onOpenSettings={handleOpenPaperclipSettings}
                                     workspacePath={workspaceAbsPath}
+                                    onExecuteInZCode={(issue) => {
+                                      // ZCode 自主执行落地：认领成功后创建本地 ZCode 任务，
+                                      // prompt 由 Paperclip 任务标题+描述拼装；切回聊天主视图跟进。
+                                      const prompt = [
+                                        issue.title,
+                                        issue.description ? `\n${issue.description}` : "",
+                                      ].join("");
+                                      showChatMainView();
+                                      handleCreateTaskInChat({ initialPrompt: prompt });
+                                    }}
+                                    onAutoExecuteInZCode={(issue, targetWorkspacePath) => {
+                                      // 自动认领：不切视图、不抢活动标签——在目标工作区后台
+                                      // 创建任务并自动发送（与 zcode send 同一条 admission 链：
+                                      // IZCodeTaskService.sendPrompt，空闲开新轮/忙碌排队）。
+                                      // 目标 = 任务绑定项目的工作区路径（需已打开），否则活动工作区。
+                                      const opened = workspaceTabs.find(
+                                        (tab) => tab.workspacePath === targetWorkspacePath,
+                                      );
+                                      const targetPath = opened
+                                        ? opened.workspacePath
+                                        : workspaceAbsPath;
+                                      const targetIdentity = opened?.workspaceIdentity;
+                                      const prompt = [
+                                        issue.title,
+                                        issue.description ? `\n${issue.description}` : "",
+                                      ].join("");
+                                      const sessionStore = useZCodeSessionStore.getState();
+                                      sessionStore.startDraft(targetPath, undefined, targetIdentity, {
+                                        createSource: "session",
+                                      });
+                                      // 先写草稿事实源：v4 预热会话握手前发送失败时，
+                                      // 用户切过去看到的就是预填好的草稿（优雅降级）。
+                                      persistV4ComposerDraft(
+                                        targetPath,
+                                        targetIdentity,
+                                        V4_DRAFT_SCOPE_ROOT,
+                                        { text: prompt },
+                                      );
+                                      sessionStore.requestComposerTextInsert(
+                                        targetPath,
+                                        prompt,
+                                        targetIdentity,
+                                      );
+                                      // draftSessionId 由 v4 预热握手异步写入；轮询就绪后
+                                      // 自动发送。10s 未就绪保持预填草稿（不打断用户）。
+                                      const workspaceKey = targetIdentity?.trim() || targetPath;
+                                      const deadline = Date.now() + 10_000;
+                                      const timer = setInterval(() => {
+                                        const workspaceState =
+                                          useZCodeSessionStore.getState().workspaces[workspaceKey];
+                                        const draftId = workspaceState?.draftSessionId ?? null;
+                                        if (draftId) {
+                                          clearInterval(timer);
+                                          void services.zcodeTaskService
+                                            .sendPrompt({
+                                              taskId: draftId,
+                                              traceId: crypto.randomUUID(),
+                                              content: prompt,
+                                            })
+                                            .catch(() => {
+                                              // 发送失败降级：预填草稿仍在，可手动发送。
+                                            });
+                                        } else if (Date.now() > deadline) {
+                                          clearInterval(timer);
+                                        }
+                                      }, 300);
+                                    }}
                                   />
                                 </div>
                               </ScopedErrorBoundary>

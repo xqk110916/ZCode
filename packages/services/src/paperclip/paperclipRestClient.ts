@@ -48,6 +48,10 @@ export interface PaperclipRestClient {
   createIssue(companyId: string, input: PaperclipCreateIssueInput): Promise<PaperclipIssue>;
   updateIssue(issueId: string, patch: PaperclipUpdateIssueInput): Promise<PaperclipIssue>;
   postComment(issueId: string, body: string): Promise<void>;
+  /** 认领任务（CAS：expectedStatuses；成功转 in_progress。board 可代任意 agent 认领）。 */
+  checkoutIssue(issueId: string, agentId: string): Promise<PaperclipIssue>;
+  /** 暂停 agent 心跳（body 空对象；幂等）。 */
+  pauseAgent(agentId: string): Promise<PaperclipAgent>;
   /** 删除 agent（团队管理）；主 Agent 也可删，删除后由后续新增/切换补位。 */
   deleteAgent(agentId: string): Promise<void>;
   /** adapter 可选模型列表（按 adapterType，如 claude_local）。 */
@@ -221,6 +225,22 @@ export function createPaperclipRestClient(deps: PaperclipRestClientDeps): Paperc
       request("POST", `/issues/${encodeURIComponent(issueId)}/comments`, {
         body: { body },
       }),
+    /**
+     * 认领任务（CAS 语义：expectedStatuses 声明期望的当前状态，不匹配即冲突；
+     * 成功后 status → in_progress。checkout 是临时检出，结束即释放，无持久认领人
+     * 字段——认领身份即 assignee）。board 身份可代任意 agent 认领。
+     */
+    checkoutIssue: (issueId, agentId) =>
+      request("POST", `/issues/${encodeURIComponent(issueId)}/checkout`, {
+        body: { agentId, expectedStatuses: ["todo", "in_progress", "blocked"] },
+        parse: (raw) => paperclipIssueSchema.parse(raw),
+      }),
+    /** 暂停 agent 心跳（自主执行模式防 Paperclip 驱动；幂等）。 */
+    pauseAgent: (agentId) =>
+      request("POST", `/agents/${encodeURIComponent(agentId)}/pause`, {
+        body: {},
+        parse: (raw) => paperclipAgentSchema.parse(raw),
+      }),
     deleteAgent: (agentId) =>
       request("DELETE", `/agents/${encodeURIComponent(agentId)}`, {
         parse: () => undefined,
@@ -248,6 +268,11 @@ export function createPaperclipRestClient(deps: PaperclipRestClientDeps): Paperc
           ...(patch.name === undefined || patch.name.trim() === ""
             ? {}
             : { name: patch.name.trim() }),
+          // role 与 name/adapterConfig 平级（updateAgentSchema 为 create 的 partial 化）；
+          // 曾漏透传导致「切换主 Agent」退化为 no-op：旧的被本地降级、新的没升级。
+          ...(patch.role === undefined || patch.role.trim() === ""
+            ? {}
+            : { role: patch.role.trim() }),
           adapterConfig: {
             ...(patch.model === undefined ? {} : { model: patch.model }),
             ...(patch.effort === undefined ? {} : { effort: patch.effort }),

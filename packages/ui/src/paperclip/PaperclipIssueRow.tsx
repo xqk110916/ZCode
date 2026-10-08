@@ -3,7 +3,7 @@
  * 展开后是描述和最近的执行记录，不必打开 Paperclip 自己的页面。
  */
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, CircleCheck } from "lucide-react";
+import { ChevronDown, CircleCheck, Zap } from "lucide-react";
 import type {
   PaperclipAgent,
   PaperclipInteraction,
@@ -130,6 +130,8 @@ export function PaperclipIssueRow({
   onAcceptInteraction,
   onRejectInteraction,
   onRespondInteraction,
+  onExecuteInZCode,
+  zcodeAgentOwned,
 }: {
   issue: PaperclipIssue;
   locale: string;
@@ -153,6 +155,10 @@ export function PaperclipIssueRow({
     interactionId: string,
     answers: ReadonlyArray<{ questionId: string; optionIds: string[] }>,
   ) => Promise<boolean>;
+  /** 指派给 ZCode（http agent）的任务显示「在 ZCode 中执行」；缺省不渲染。 */
+  onExecuteInZCode?: () => void;
+  /** 本任务指派给 ZCode（http agent）：blocked 按模式语义显示为「待 ZCode 执行」。 */
+  zcodeAgentOwned?: boolean;
 }) {
   const { intl } = useZCodeIntl();
   const [expanded, setExpanded] = useState(false);
@@ -176,7 +182,13 @@ export function PaperclipIssueRow({
   const elapsed = ticking
     ? formatPaperclipElapsed(run?.startedAt ?? run?.createdAt, now, locale)
     : "";
-  const phaseLabel = intl.formatMessage({ id: PHASE_MESSAGE[progress.phase] });
+  // ZCode 自主执行的任务由 Paperclip 账本规则标 blocked（paused agent 的未结任务
+  // 自动挂起），语义是"等 ZCode 处理"而非"受阻"——按中性"待执行"呈现。
+  const zcodePending =
+    progress.phase === "blocked" && issue.assigneeAgentId !== null && zcodeAgentOwned;
+  const phaseLabel = zcodePending
+    ? intl.formatMessage({ id: "paperclip.progress.zcodePending" })
+    : intl.formatMessage({ id: PHASE_MESSAGE[progress.phase] });
   const agentName =
     (assignee ? agentDisplayName(assignee) : null) ??
     (run?.agentId ? findAgentName(agents, run.agentId) : null);
@@ -190,11 +202,19 @@ export function PaperclipIssueRow({
   const updated = formatTimestamp(issue.updatedAt ?? issue.createdAt, locale);
 
   return (
-    <li
+    // 根元素用 div：本组件只被 IssueBranch 包在 <li> 内渲染（树形列表的 li 承载
+    // 「行 + 子树 ul」），若自身也是 li 会形成 li 嵌套 li 的非法 HTML。
+    <div
       data-testid="paperclip-issue-row"
       className="relative overflow-hidden rounded-xl border border-card-border bg-card transition-colors hover:border-border-hover"
     >
-      <span className={cn("absolute inset-y-0 left-0 w-0.5", accentClass(progress.phase))} aria-hidden />
+      <span
+        className={cn(
+          "absolute inset-y-0 left-0 w-0.5",
+          zcodePending ? "bg-foreground/25" : accentClass(progress.phase),
+        )}
+        aria-hidden
+      />
       <div
         role="button"
         tabIndex={0}
@@ -250,6 +270,21 @@ export function PaperclipIssueRow({
               {intl.formatMessage({ id: "paperclip.issues.markDone" })}
             </Button>
           ) : null}
+          {onExecuteInZCode && issue.status !== "done" && issue.status !== "cancelled" ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-ui-sm"
+              title={intl.formatMessage({ id: "paperclip.issues.executeInZCodeHint" })}
+              onClick={(event) => {
+                event.stopPropagation();
+                onExecuteInZCode();
+              }}
+            >
+              <Zap className="size-4" />
+              {intl.formatMessage({ id: "paperclip.issues.executeInZCode" })}
+            </Button>
+          ) : null}
           <ChevronDown
             className={cn(
               "size-4 shrink-0 text-foreground-subtlest transition-transform",
@@ -268,7 +303,12 @@ export function PaperclipIssueRow({
           {[0, 1, 2, 3].map((index) => (
             <span
               key={index}
-              className={cn("h-full flex-1 rounded-full", segmentClass(index, progress.stageIndex, progress.phase))}
+              className={cn(
+                "h-full flex-1 rounded-full",
+                zcodePending
+                  ? segmentClass(index, progress.stageIndex, "waiting")
+                  : segmentClass(index, progress.stageIndex, progress.phase),
+              )}
             />
           ))}
         </div>
@@ -331,6 +371,6 @@ export function PaperclipIssueRow({
           onRespondInteraction={onRespondInteraction}
         />
       ) : null}
-    </li>
+    </div>
   );
 }

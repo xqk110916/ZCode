@@ -122,10 +122,24 @@ function agentStatusPresentation(status: string): {
   }
 }
 
-/** 状态徽章：语义色 + 跟随文本色的状态圆点（不只靠颜色区分，可读性兜底）。 */
-function PaperclipAgentStatusBadge({ status }: { status: string }) {
+/**
+ * 状态徽章：语义色 + 跟随文本色的状态圆点（不只靠颜色区分，可读性兜底）。
+ * ZCode 自主执行身份（http adapter）的 paused 是刻意设置（暂停心跳、不被
+ * Paperclip 驱动，见 spec「ZCode 自主执行模式」），按模式语义显示为「自主执行」，
+ * 不沿用会误导的「已暂停」警告色。
+ */
+function PaperclipAgentStatusBadge({
+  status,
+  adapterType,
+}: {
+  status: string;
+  adapterType: string;
+}) {
   const { intl } = useZCodeIntl();
-  const presentation = agentStatusPresentation(status);
+  const isZcodeAutonomous = adapterType === "http" && status === "paused";
+  const presentation = isZcodeAutonomous
+    ? { labelKey: "paperclip.agentStatus.zcodeAutonomous", className: "bg-info-subtle text-info" }
+    : agentStatusPresentation(status);
   return (
     <Badge variant="secondary" className={cn("gap-1.5 text-ui-sm", presentation.className)}>
       <span className="size-1.5 shrink-0 rounded-full bg-current" />
@@ -258,7 +272,12 @@ export function PaperclipAgentCard({
             {agent.model}
           </Badge>
         ) : null}
-        {agent.status ? <PaperclipAgentStatusBadge status={agent.status} /> : null}
+        {agent.status ? (
+          <PaperclipAgentStatusBadge
+            status={agent.status}
+            adapterType={agent.adapterType || ""}
+          />
+        ) : null}
       </div>
       {queueCount !== undefined ? (
         <div className="flex flex-col gap-0.5">
