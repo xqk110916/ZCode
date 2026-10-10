@@ -227,6 +227,12 @@ ZCode 不作为被 Paperclip 驱动的 adapter（无 heartbeat 执行体、不 s
 把控。身份 = 公司内 `adapterType === "http"` 的 agent（名为 "ZCode"，公司内唯一，
 `ensureZCodeAgent` 幂等创建/命中，**创建后自动 pause**）。
 
+身份在场由面板数据装载保证（`usePaperclip.loadAll`）：拉到的 agents 里没有 http
+agent 时自动 `ensureZCodeAgent()` 补建并并入列表（已存在则零额外请求；失败仅 warn
+降级、下次刷新重试）。否则冷启动下身份只在 `claimIssueForZCode` 内懒创建，而认领
+入口又要求任务已指派给它、指派下拉又只列已存在 agent——三环互锁，新公司里永远
+无法手动指派给 ZCode。
+
 事件顺序：任务指派给 ZCode agent → 面板任务行显示「在 ZCode 中执行」→ 点击后
 `claimIssueForZCode`（board 身份 `POST /issues/{id}/checkout`，CAS 语义
 `expectedStatuses: [todo, in_progress, blocked]`，成功后 status → in_progress）→

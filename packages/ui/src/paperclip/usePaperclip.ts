@@ -196,7 +196,20 @@ export function usePaperclip(): UsePaperclipState {
         paperclipService.listProjects().catch(() => [] as PaperclipProject[]),
       ]);
       if (issuesRequestEpochRef.current !== epoch) return;
-      setAgents(nextAgents);
+      // 冷启动补建 ZCode 自主执行身份：该身份原本只在认领（claimIssueForZCode）
+      // 内懒创建，但认领入口要求任务已指派给它、指派下拉又只列已存在 agent，
+      // 三环互锁导致新公司里永远无法手动指派给 ZCode。装载时幂等补建补位：
+      // 已存在零额外请求；失败仅 warn 降级，下次刷新重试（与 listProjects 同口径）。
+      let agentsToCommit = nextAgents;
+      if (!nextAgents.some((agent) => agent.adapterType === "http")) {
+        try {
+          agentsToCommit = [...nextAgents, await paperclipService.ensureZCodeAgent()];
+        } catch (error) {
+          logger.warn("paperclip ensure zcode agent failed", { error });
+        }
+      }
+      if (issuesRequestEpochRef.current !== epoch) return;
+      setAgents(agentsToCommit);
       commitIssues(nextIssues, { epoch, seq: seqAtStart });
       setProjects(nextProjects);
     } catch (error) {

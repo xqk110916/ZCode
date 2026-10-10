@@ -54,7 +54,11 @@ export function usePaperclipCreateSubmit(input: {
     if (projectId === PAPERCLIP_CURRENT_WORKSPACE_PROJECT && input.workspacePath) {
       const project = await input.ensureProjectForWorkspace({
         // 项目名取工作区目录名（Paperclip 项目重名可共存，按 cwd 幂等匹配）。
-        name: input.workspacePath.split("/").filter(Boolean).pop() ?? input.workspacePath,
+        // Windows 路径是反斜杠分隔，直接 split("/") 会把整段绝对路径当目录名，
+        // 先归一化为 / 再切（与 useAutomationProjectOptions 的取目录名口径一致）。
+        name:
+          input.workspacePath.replace(/\\/g, "/").split("/").filter(Boolean).pop() ??
+          input.workspacePath,
         cwd: input.workspacePath,
       });
       if (!project) {
