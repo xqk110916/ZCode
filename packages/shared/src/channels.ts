@@ -151,6 +151,12 @@ export const ServiceChannels = {
   OnboardingRecord: "onboarding-record",
   /** Paperclip 外部 agent 编排服务（REST/WS 客户端，Paperclip 独立部署） */
   Paperclip: "paperclip",
+  /** 数据库看板：数据操作（增改查+审计回退）与探索看板 */
+  DbBoard: "db-board",
+  /** 数据库看板 · 项目业务知识库（代码感知的引导收集） */
+  DbBoardKnowledge: "db-board-knowledge",
+  /** 数据库看板 · 对话智能体（MCP server 懒启动 + 会话描述符） */
+  DbBoardAgent: "db-board-agent",
 } as const;
 
 export type ServiceChannelName = (typeof ServiceChannels)[keyof typeof ServiceChannels];

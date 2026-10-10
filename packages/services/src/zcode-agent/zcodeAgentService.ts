@@ -112,6 +112,7 @@ import {
   type ZCodeToolExecResource,
   type ZCodePluginOperationProgressNotification,
   type ZCodeTaskMode,
+  type ZCodeAgentMcpServer,
 } from "@zcode/shared";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { createOfficialMcpIssuanceAudit } from "#src/official-mcp/officialMcpIssuanceAudit.js";
@@ -891,6 +892,12 @@ interface CreateZCodeAgentServiceOptions extends Omit<
    * dynamicWorkflowEnabled。缺省不传（纯 CLI 装配）= 永远关闭，与 CLI 缺省一致。
    */
   resolveDynamicWorkflowClientConfig?: () => Promise<DynamicWorkflowClientConfig | undefined>;
+  /**
+   * 数据库看板扩展：按 workspaceKey 解析应附加到该工作区新会话的 db_board MCP 描述符
+   * （工作区绑定严格模式下已绑定的项目返回描述符；未绑定/legacy 返回 null 不注入）。
+   * 缺省不传（纯 CLI 装配）= 永不注入。
+   */
+  resolveDbBoardMcpServer?: (workspaceKey: string) => Promise<ZCodeAgentMcpServer | null>;
   resolveOffPeakTaskService?: () =>
     | Pick<IOffPeakTaskService, "createTask" | "list" | "getCodingPlanSupport">
     | undefined;
@@ -3287,16 +3294,31 @@ export function createZCodeAgentService(
       // 信封处同源注入；门禁 false 时不写字段（缺省即 fail-closed，与 legacy 一致）。
       const dynamicWorkflowEnabled = await resolveDynamicWorkflowGate();
       const offPeakToolEnabled = isOffPeakToolSupported(params);
-      if (!offPeakToolEnabled && !dynamicWorkflowEnabled) return envelope;
-      const payload = commandPayloadSchemas.createSession.parse(envelope.payload);
+      // 数据库看板扩展：绑定（严格模式）工作区的新会话自动附 db_board MCP，
+      // 与 offPeak 同一注入面；解析失败按不注入处理（fail-open 只影响数据库工具面）。
+      const createPayloadPreview = commandPayloadSchemas.createSession.parse(envelope.payload);
+      const dbBoardServer = options?.resolveDbBoardMcpServer
+        ? await options
+            .resolveDbBoardMcpServer(String(createPayloadPreview.workspaceId ?? ""))
+            .catch(() => null)
+        : null;
+      const dbBoardMissing =
+        dbBoardServer !== null &&
+        !(createPayloadPreview.mcpServers ?? []).some((server) => server.name === dbBoardServer.name);
+      if (!offPeakToolEnabled && !dynamicWorkflowEnabled && !dbBoardMissing) return envelope;
       return {
         ...envelope,
         payload: {
-          ...payload,
+          ...createPayloadPreview,
           ...(offPeakToolEnabled ? { offPeakToolEnabled: true } : {}),
           // 动态工作流灰度：V4 createSession 是桌面新会话的实际创建路径，不透传则九个工具
           // 永不注册。
           ...(dynamicWorkflowEnabled ? { dynamicWorkflowEnabled: true } : {}),
+          ...(dbBoardMissing
+            ? {
+                mcpServers: [...(createPayloadPreview.mcpServers ?? []), dbBoardServer!],
+              }
+            : {}),
         },
       };
     }

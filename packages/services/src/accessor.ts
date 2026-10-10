@@ -36,6 +36,9 @@ import type { IMemoryService } from "./memory/memory.js";
 import type { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 import type { IFeedbackService } from "./feedback/feedback.js";
 import type { IPaperclipService } from "./paperclip/paperclip.js";
+import type { IDbBoardService } from "./dbBoard/dbBoard.js";
+import type { IDbBoardKnowledgeService } from "./dbBoardKnowledge/dbBoardKnowledge.js";
+import type { IDbBoardAgentService } from "./dbBoardAgent/dbBoardAgent.js";
 import type { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
 import type { IWindowControllerService } from "./window-controller/windowController.js";
 import type { IOnboardingRecordService } from "./onboarding/onboardingRecord.js";
@@ -91,4 +94,10 @@ export interface IServiceAccessor {
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
   /** Paperclip 外部编排客户端；旧测试 double / 未启用 host 可不提供。 */
   readonly paperclipService?: IPaperclipService;
+  /** 数据库看板（数据操作 + 探索看板）；旧测试 double 可不提供。 */
+  readonly dbBoardService?: IDbBoardService;
+  /** 数据库看板 · 项目业务知识库；旧测试 double 可不提供。 */
+  readonly dbBoardKnowledgeService?: IDbBoardKnowledgeService;
+  /** 数据库看板 · 对话智能体；旧测试 double 可不提供。 */
+  readonly dbBoardAgentService?: IDbBoardAgentService;
 }

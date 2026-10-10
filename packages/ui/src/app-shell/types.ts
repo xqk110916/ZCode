@@ -117,7 +117,7 @@ export interface GitChangeSummary {
   removed: number;
 }
 
-export type WorkspaceMainView = "chat" | "automations" | "plugin-store" | "paperclip";
+export type WorkspaceMainView = "chat" | "automations" | "plugin-store" | "paperclip" | "db-board";
 
 export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackService"> {
   workspaceReadOnlyReason?: string;
@@ -132,6 +132,7 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   handleManageInstalledPlugins: () => void;
   handleOpenPaperclip: () => void;
   handleOpenPaperclipSettings: () => void;
+  handleOpenDbBoard: () => void;
   workspaceShellZCodeState: WorkspaceShellZCodeState;
   theme: Theme;
   isMacFullscreen: boolean;

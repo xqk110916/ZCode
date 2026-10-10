@@ -40,6 +40,10 @@ export default defineConfig({
     "combined-stream",
     "proxy-from-env",
     "follow-redirects",
+    // pg（node-postgres）内部动态 require("events")，内联 ESM 产物会崩；外置交给 Node 原生加载。
+    "pg",
+  // @modelcontextprotocol/server 为 ESM-only 包且体量较大；外置交给宿主 Node 原生加载。
+  "@modelcontextprotocol/server",
     "@lydell/node-pty-darwin-arm64",
     "@lydell/node-pty-darwin-x64",
     "@lydell/node-pty-linux-arm64",

@@ -47,6 +47,7 @@ import type {
 import { AutomationsMainBreadcrumbFrame } from "@/settings/AutomationsMainBreadcrumbFrame.js";
 import { PluginStorePage } from "@/settings/PluginStorePage.js";
 import { PaperclipPage } from "@/paperclip/PaperclipPage.js";
+import { DbBoardPage } from "@/dbBoard/DbBoardPage.js";
 import { TaskFindDialog } from "@/quickpick/TaskFindDialog.js";
 import { WorkspaceHeader } from "@/WorkspaceHeader.js";
 import { WorkspaceSidebar, type SidebarFileTreeOpenRequest } from "@/WorkspaceSidebar.js";
@@ -203,6 +204,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   handleManageInstalledPlugins,
   handleOpenPaperclip,
   handleOpenPaperclipSettings,
+  handleOpenDbBoard,
   onConnectRemote,
   onSelectRemoteProject,
   onCancelRemoteProject,
@@ -1608,6 +1610,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                     pluginStoreActive={workspaceMainView === "plugin-store"}
                     onOpenPaperclip={handleOpenPaperclip}
                     paperclipActive={workspaceMainView === "paperclip"}
+                    onOpenDbBoard={handleOpenDbBoard}
+                    dbBoardActive={workspaceMainView === "db-board"}
                     onFileTreeOpenChange={setIsSidebarFileTreeOpen}
                   />
                 </WorkflowRunOpenProvider>
@@ -1920,6 +1924,34 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                                     }}
                                   />
                                 </div>
+                              </ScopedErrorBoundary>
+                            </div>
+                          </AutomationsMainBreadcrumbFrame>
+                        </main>
+                      ) : workspaceMainView === "db-board" ? (
+                        <main className="flex h-full min-h-0 flex-1 flex-col bg-background">
+                          <AutomationsMainBreadcrumbFrame
+                            isDesktop={Boolean(isDesktop)}
+                            sectionLabel={intl.formatMessage({
+                              id: "workspace.openDbBoardSettings",
+                            })}
+                            ariaLabel={intl.formatMessage({
+                              id: "settings.breadcrumbLabel",
+                            })}
+                          >
+                            <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4 md:px-6 md:py-6">
+                              <ScopedErrorBoundary
+                                scope="db-board-main"
+                                resetKeys={workspaceOnlyResetKeys}
+                                variant="panel"
+                                className="flex min-h-0 flex-1 flex-col"
+                              >
+                                <DbBoardPage
+                                  operator={user?.username ?? "local"}
+                                  workspacePath={workspaceAbsPath}
+                                  workspaceIdentity={workspaceIdentity?.trim() || undefined}
+                                  onOpenChat={showChatMainView}
+                                />
                               </ScopedErrorBoundary>
                             </div>
                           </AutomationsMainBreadcrumbFrame>

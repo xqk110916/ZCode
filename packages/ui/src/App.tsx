@@ -951,6 +951,10 @@ export function App({
   const handleOpenPaperclipSettings = useCallback(() => {
     handleOpenSettingsSection("paperclip");
   }, [handleOpenSettingsSection]);
+  const handleNavigateToDbBoardMain = useCallback(() => {
+    preserveNextSettingsExit();
+    setWorkspaceMainView("db-board");
+  }, [preserveNextSettingsExit]);
   const handlePrimaryNavigationBack =
     workspaceMainView === "plugin-store" ? handleManageInstalledPlugins : handleTaskNavBack;
   const canPrimaryNavigationBack = workspaceMainView === "plugin-store" || canTaskNavBack;
@@ -1143,6 +1147,7 @@ export function App({
         handleManageInstalledPlugins={handleManageInstalledPlugins}
         handleOpenPaperclip={handleNavigateToPaperclipMain}
         handleOpenPaperclipSettings={handleOpenPaperclipSettings}
+        handleOpenDbBoard={handleNavigateToDbBoardMain}
         onConnectRemote={onConnectRemote}
         onSelectRemoteProject={onSelectRemoteProject}
         onCancelRemoteProject={onCancelRemoteProject}

@@ -46,6 +46,11 @@ export const SERVER_HTTP_EXTERNAL_DEPENDENCIES = [
   // 云内容 ZIP 解包链路引入 yauzl，其 CommonJS require("fs") 在 ESM
   // bundle 加载时崩溃；与 desktop 相同，外置后交给 Node 原生加载。
   "yauzl",
+  // pg（node-postgres）为 CJS 包，内部 require("events") 等被内联进 ESM
+  // bundle 后启动即崩（Dynamic require not supported）；外置交给 Node 原生加载。
+  "pg",
+  // @modelcontextprotocol/server 为 ESM-only 包且体量较大；外置交给宿主 Node 原生加载。
+  "@modelcontextprotocol/server",
 ];
 
 export default defineConfig({

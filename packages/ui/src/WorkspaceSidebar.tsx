@@ -22,6 +22,7 @@ import {
   Hash,
   ListFilter,
   ListChecks,
+  Database,
   Maximize2,
   MessageCircleCheck,
   MessageCirclePlus,
@@ -261,9 +262,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenAutomations,
   onOpenPluginStore,
   onOpenPaperclip,
+  onOpenDbBoard,
   automationsActive = false,
   pluginStoreActive = false,
   paperclipActive = false,
+  dbBoardActive = false,
   onFileTreeOpenChange,
 }: {
   workspacePath: string;
@@ -315,9 +318,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenAutomations?: () => void;
   onOpenPluginStore?: () => void;
   onOpenPaperclip?: () => void;
+  onOpenDbBoard?: () => void;
   automationsActive?: boolean;
   pluginStoreActive?: boolean;
   paperclipActive?: boolean;
+  dbBoardActive?: boolean;
   onFileTreeOpenChange?: (open: boolean) => void;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
@@ -760,6 +765,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const handleOpenPaperclipMain = useCallback(() => {
     onOpenPaperclip?.();
   }, [onOpenPaperclip]);
+  const handleOpenDbBoardMain = useCallback(() => {
+    onOpenDbBoard?.();
+  }, [onOpenDbBoard]);
   const handleOpenAutomationsMain = useCallback(() => {
     onOpenAutomations?.();
   }, [onOpenAutomations]);
@@ -1368,6 +1376,21 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
             >
               <ListChecks className="size-4" />
               {intl.formatMessage({ id: "workspace.openPaperclipSettings" })}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={handleOpenDbBoardMain}
+              data-icon="inline-start"
+              data-testid="db-board-sidebar-open"
+              size="lg"
+              aria-pressed={dbBoardActive}
+              className={cn(
+                "w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground",
+                dbBoardActive && "bg-selected text-foreground",
+              )}
+            >
+              <Database className="size-4" />
+              {intl.formatMessage({ id: "workspace.openDbBoardSettings" })}
             </Button>
           </div>
 

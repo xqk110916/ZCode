@@ -125,6 +125,10 @@ const desktopNodeRuntimeExternals = [
   "node-forge",
   // ZIP 解包器内部依赖 CommonJS require("fs")，不能内联到 ESM main/host 产物。
   "yauzl",
+  // pg（node-postgres）内部 require("events") 等动态 require，内联进 ESM 产物会崩；外置。
+  "pg",
+  // @modelcontextprotocol/server 为 ESM-only 包且体量较大；外置交给宿主 Node 原生加载。
+  "@modelcontextprotocol/server",
 ];
 
 function createDevReadyMarkerHook(target: "main" | "host" | "preload"): string {

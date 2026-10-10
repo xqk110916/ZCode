@@ -26,6 +26,12 @@
 
 测试入口以目标包当前的 `package.json` 和实际测试文件为准，不假定存在统一的单测或 E2E 命令。
 
+### 开发数据目录（本机必读，漏带会复现「看板丢连接」）
+
+本机 ZCode 数据根是 `D:\下载`（桌面端经 `~/.zcode/v2/setting.json` 的 `dataBaseDir` 固定，不受影响）。**server/web dev 进程不读该 setting，只认 `ZCODE_DATA_BASE_DIR` 环境变量**；该变量未持久化到 Windows 用户环境，只存在于最初设置它的 shell 会话链——新终端、新会话里重启 dev server 必然漏带，服务会静默落到 `%USERPROFILE%\.zcode`，表现为数据库看板「看不到已保存的连接/知识库/凭据」，与桌面端数据分裂（历史上已多次复现）。
+
+规则：启动或重启 `pnpm dev:web` / `pnpm --filter @zcode/server dev` 前，先 `echo $ZCODE_DATA_BASE_DIR` 验证；为空则显式 `export ZCODE_DATA_BASE_DIR="D:/下载"`（Git Bash 用正斜杠），不要依赖 shell 继承。桌面端 dev 无需此变量（`setDataBaseDir` 优先级更高）。
+
 - `packages/desktop`：Electron main、host、renderer。
 - `packages/web`、`packages/server`：Web 客户端与服务端。
 - `packages/ui`：共享 React 组件、hooks 与 Zustand store。

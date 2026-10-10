@@ -9,7 +9,7 @@ import {
   NodeModelSelectionConfigRepository,
   PERSONAL_PROVIDER_CONFIG_FILE_NAME,
 } from "@zcode/provider-node";
-import { getAppConfigDir as resolveAppConfigDir } from "./paths.js";
+import { getAppConfigDir as resolveAppConfigDir, getConversationWorkspaceDir } from "./paths.js";
 import {
   buildLocalMediaPreviewUrl,
   isProviderProvisioningAccountCredentialKey,
@@ -342,6 +342,13 @@ import { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 import { IFeedbackService } from "./feedback/feedback.js";
 import { IPaperclipService } from "./paperclip/paperclip.js";
 import { createPaperclipService } from "./paperclip/paperclipService.js";
+import { IDbBoardService } from "./dbBoard/dbBoard.js";
+import { createDbBoardService } from "./dbBoard/dbBoardService.js";
+import { IDbBoardKnowledgeService } from "./dbBoardKnowledge/dbBoardKnowledge.js";
+import { createDbBoardKnowledgeService } from "./dbBoardKnowledge/dbBoardKnowledgeService.js";
+import { IDbBoardAgentService } from "./dbBoardAgent/dbBoardAgent.js";
+import { createDbBoardAgentService } from "./dbBoardAgent/dbBoardAgentService.js";
+import type { DbBoardKnowledge } from "./dbBoardKnowledge/dbBoardKnowledge.js";
 import { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
 import { createFileService } from "./file/fileService.js";
 import { createMediaPreviewService } from "./media-preview/mediaPreview.js";
@@ -697,6 +704,12 @@ const managedHostApiNetworkTransports = new WeakMap<ServiceCollection, HostApiNe
 
 /** Paperclip 服务的 WS/Emitter 资源；dispose 时统一释放。 */
 const managedPaperclipServices = new WeakMap<
+  ServiceCollection,
+  { dispose(): void }
+>();
+
+/** 数据库助手 MCP server 的 loopback 监听；dispose 时统一释放。 */
+const managedDbBoardAgentServices = new WeakMap<
   ServiceCollection,
   { dispose(): void }
 >();
@@ -2122,6 +2135,34 @@ export function createLocalServices(options: {
     // 是它自己那些 workspace 的唯一裁决者，灰度开启时远程 workspace 同样提供工作流。
     resolveDynamicWorkflowClientConfig: () =>
       codingPlanSubscriptionService.getDynamicWorkflowClientConfig(),
+    // 数据库看板扩展：严格模式下已绑定工作区的新会话自动附 db_board MCP（resolver 见下方装配）。
+    resolveDbBoardMcpServer: async (workspaceKey: string) => {
+      const trimmed = workspaceKey.trim();
+      if (!trimmed || !dbBoardBindingsForSessionInjection || !dbBoardAgentForSessionInjection) {
+        return null;
+      }
+      try {
+        const bindings = await dbBoardBindingsForSessionInjection.getBindings();
+        if (
+          bindings.mode !== "strict" ||
+          !bindings.bindings[workspaceBindingKeyOf(trimmed)]
+        ) {
+          return null;
+        }
+        const info = await dbBoardAgentForSessionInjection.getMcpServer({ workspaceKey: trimmed });
+        if (!info.available || !info.server) return null;
+        return {
+          name: info.server.name,
+          type: "http" as const,
+          url: info.server.url,
+          headers: [{ name: "Authorization", value: `Bearer ${info.server.token}` }],
+          isolation: "session" as const,
+          timeoutMs: 240_000,
+        };
+      } catch {
+        return null;
+      }
+    },
     commandResolver: options?.zcodeAgentCommandResolver,
     presentationSurface: resolveZCodeAgentPresentationSurface({
       runtimeSurface: options?.agentRuntimeContext?.runtimeSurface,
@@ -2462,6 +2503,75 @@ export function createLocalServices(options: {
   // Paperclip：外部编排平台客户端（REST + live-events WS）。连接懒建立（首次调用/面板打开），
   // 这里只创建 handle；注册与 WS 生命周期收口在 services 集合建好后进行。
   const paperclipService = createPaperclipService({ settingService, credentialService });
+  // 数据库看板 MCP 注入解析器晚于此处装配（dbBoard 服务在 zcodeAgentService 之后创建），
+  // 经懒引用回接，与 dbBoardKnowledgeServiceRef 同一模式。
+  let dbBoardAgentForSessionInjection: {
+    getMcpServer(params: { username?: string; workspaceKey?: string }): Promise<{
+      available: boolean;
+      server?: { name: "db_board"; url: string; token: string };
+    }>;
+  } | null = null;
+  let dbBoardBindingsForSessionInjection: {
+    getBindings(): Promise<{ mode: "legacy" | "strict"; bindings: Record<string, string> }>;
+  } | null = null;
+  const workspaceBindingKeyOf = (key: string): string =>
+    key.trim().replace(/\//g, "\\").toLowerCase();
+
+  // 数据库看板：连接懒建立（首次调用/面板打开）；模型生成复用 generateWorkspaceText 一次式链路
+  // （与 Git 提交信息生成同源），workspace 取非项目 cwd 的默认会话目录。
+  // 知识库服务晚于看板创建（依赖其公开面），loadKnowledge 经懒引用闭包回接，避免创建顺序环。
+  let dbBoardKnowledgeServiceRef: {
+    getKnowledge(): Promise<DbBoardKnowledge | null>;
+  } | null = null;
+  const dbBoardService = createDbBoardService({
+    credentialService,
+    loadKnowledge: async () =>
+      dbBoardKnowledgeServiceRef ? await dbBoardKnowledgeServiceRef.getKnowledge() : null,
+    readCurrentModel: async () => {
+      return (await providerRuntime.modelSelection.getView()).preferredSelection ?? null;
+    },
+    generateText: async (params) => {
+      return await zcodeAgentService.generateWorkspaceText({
+        workspacePath: getConversationWorkspaceDir(),
+        selection: params.selection,
+        prompt: params.prompt,
+        querySource: params.querySource,
+        ...(params.maxOutputTokens
+          ? { maxOutputTokens: params.maxOutputTokens }
+          : {}),
+        // 蒸馏/生成输出 4096 token 常超 agent 默认 60s；调用方按需放宽上限。
+        ...(params.timeoutMs ? { signal: AbortSignal.timeout(params.timeoutMs) } : {}),
+      });
+    },
+  });
+  const dbBoardKnowledgeService = createDbBoardKnowledgeService({
+    credentialService,
+    dbBoardService,
+    readCurrentModel: async () => {
+      return (await providerRuntime.modelSelection.getView()).preferredSelection ?? null;
+    },
+    generateText: async (params) => {
+      return await zcodeAgentService.generateWorkspaceText({
+        workspacePath: getConversationWorkspaceDir(),
+        selection: params.selection,
+        prompt: params.prompt,
+        querySource: params.querySource,
+        ...(params.maxOutputTokens
+          ? { maxOutputTokens: params.maxOutputTokens }
+          : {}),
+        ...(params.timeoutMs ? { signal: AbortSignal.timeout(params.timeoutMs) } : {}),
+      });
+    },
+  });
+  dbBoardKnowledgeServiceRef = dbBoardKnowledgeService;
+
+  // 数据库助手：MCP server 懒启动（首次面板对话时才监听 loopback 端口）。
+  const dbBoardAgentService = createDbBoardAgentService({
+    dbBoardService,
+    dbBoardKnowledgeService,
+  });
+  dbBoardBindingsForSessionInjection = dbBoardService;
+  dbBoardAgentForSessionInjection = dbBoardAgentService;
 
   const services = new ServiceCollection()
     .register(IFileService, fileService)
@@ -2629,7 +2739,13 @@ export function createLocalServices(options: {
       }),
     )
     .register(IPromptAttachmentTransferService, createLocalPromptAttachmentTransferService())
-    .register(IPaperclipService, paperclipService);
+    .register(IPaperclipService, paperclipService)
+    .register(IDbBoardService, dbBoardService)
+    .register(IDbBoardKnowledgeService, dbBoardKnowledgeService)
+    .register(IDbBoardAgentService, dbBoardAgentService);
+
+  // 数据库助手 MCP server 的 loopback 监听随 services 释放统一关闭（侧表模式，best-effort）。
+  managedDbBoardAgentServices.set(services, dbBoardAgentService);
 
   // Paperclip 的 WS 订阅与事件 Emitter 随 services 释放统一关闭（侧表模式，best-effort）。
   managedPaperclipServices.set(services, paperclipService);
@@ -2804,6 +2920,7 @@ export function disposeServiceResources(services: ServiceCollection): void {
   providerProvisioningSources.delete(services);
   managedHostApiNetworkTransports.get(services)?.dispose();
   managedPaperclipServices.get(services)?.dispose();
+  managedDbBoardAgentServices.get(services)?.dispose();
 }
 
 export async function disposeServiceResourcesAndWait(services: ServiceCollection): Promise<void> {
@@ -2845,4 +2962,5 @@ export async function disposeServiceResourcesAndWait(services: ServiceCollection
     ?.disposeAndWait()
     .catch(() => {});
   managedPaperclipServices.get(services)?.dispose();
+  managedDbBoardAgentServices.get(services)?.dispose();
 }

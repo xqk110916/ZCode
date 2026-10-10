@@ -41,6 +41,9 @@ import {
   IPromptAttachmentTransferService,
   IWindowControllerService,
   IPaperclipService,
+  IDbBoardService,
+  IDbBoardKnowledgeService,
+  IDbBoardAgentService,
   type IServiceAccessor,
 } from "@zcode/services";
 
@@ -94,6 +97,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly feedbackService: IFeedbackService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
   readonly paperclipService: IPaperclipService;
+  readonly dbBoardService: IDbBoardService;
+  readonly dbBoardKnowledgeService: IDbBoardKnowledgeService;
+  readonly dbBoardAgentService: IDbBoardAgentService;
 
   constructor(channelClient: IChannelClient) {
     this.fileService = ProxyChannel.toService<IFileService>(
@@ -223,6 +229,15 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.paperclipService = ProxyChannel.toService<IPaperclipService>(
       channelClient.getChannel(IPaperclipService.channelName),
+    );
+    this.dbBoardService = ProxyChannel.toService<IDbBoardService>(
+      channelClient.getChannel(IDbBoardService.channelName),
+    );
+    this.dbBoardKnowledgeService = ProxyChannel.toService<IDbBoardKnowledgeService>(
+      channelClient.getChannel(IDbBoardKnowledgeService.channelName),
+    );
+    this.dbBoardAgentService = ProxyChannel.toService<IDbBoardAgentService>(
+      channelClient.getChannel(IDbBoardAgentService.channelName),
     );
   }
 }

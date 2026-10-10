@@ -250,6 +250,75 @@ export { IOffPeakTaskService } from "./session/offPeakTask.js";
 export type { OffPeakUpdateTaskParams } from "./session/offPeakTask.js";
 // Paperclip 外部编排客户端；接口/描述符 browser-safe（Node 实现在 ./node 入口）。
 export { IPaperclipService } from "./paperclip/paperclip.js";
+// 数据库看板（数据操作 + 探索看板）；接口/类型/描述符 browser-safe（Node 实现在 ./node 入口）。
+export { IDbBoardService } from "./dbBoard/dbBoard.js";
+export { DB_BOARD_BINARY_MARKER_PREFIX } from "./dbBoard/dbBoardSql.js";
+// 数据库看板 · 项目业务知识库；接口/类型 browser-safe（Node 实现在 ./node 入口）。
+export { IDbBoardKnowledgeService } from "./dbBoardKnowledge/dbBoardKnowledge.js";
+// 数据库看板 · 对话智能体（MCP server 懒启动 + 会话描述符）；browser-safe。
+export { IDbBoardAgentService } from "./dbBoardAgent/dbBoardAgent.js";
+export type {
+  DbBoardAgentConnectionSummary,
+  DbBoardAgentMcpInfo,
+  DbBoardAgentMcpServerDescriptor,
+  DbBoardAgentUnavailableReason,
+} from "./dbBoardAgent/dbBoardAgent.js";
+export { buildDbBoardAgentPreamble } from "./dbBoardAgent/dbBoardAgentPrompt.js";
+export type {
+  DbBoardKnowledge,
+  DbBoardKnowledgeBuildEvent,
+  DbBoardKnowledgeBuildProgress,
+  DbBoardKnowledgeBuildStage,
+  DbBoardKnowledgeBuildStatus,
+  DbBoardKnowledgeColumnMeaning,
+  DbBoardKnowledgeNacosConfig,
+  DbBoardKnowledgeProfile,
+  DbBoardKnowledgeProbeResult,
+  DbBoardKnowledgeRelation,
+  DbBoardKnowledgeRepoInfo,
+  DbBoardKnowledgeRepoSnapshot,
+  DbBoardKnowledgeTableCard,
+} from "./dbBoardKnowledge/dbBoardKnowledge.js";
+export type {
+  DbBoardBindingsInfo,
+  DbBoardChartSpec,
+  DbBoardChartType,
+  DbBoardColumnFamily,
+  DbBoardColumnMeta,
+  DbBoardConnectionConfig,
+  DbBoardConnectionEntry,
+  DbBoardConnectionSnapshot,
+  DbBoardConnectionState,
+  DbBoardDashboardSpec,
+  DbBoardDashboardSummary,
+  DbBoardExplainQueryParams,
+  DbBoardGenerateDashboardParams,
+  DbBoardGenerationResult,
+  DbBoardInsertRowParams,
+  DbBoardListOpLogsParams,
+  DbBoardOpLogEntry,
+  DbBoardOpLogResult,
+  DbBoardQueryResult,
+  DbBoardQueryRowsParams,
+  DbBoardRollbackParams,
+  DbBoardRollbackResult,
+  DbBoardSqlResult,
+  DbBoardTableMeta,
+  DbBoardTestConnectionResult,
+  DbBoardSetBindingParams,
+  DbBoardUpdateRowParams,
+  DbBoardUsageSummaryParams,
+  DbBoardWriteResult,
+} from "./dbBoard/dbBoard.js";
+export type {
+  DbBoardUsageSummary,
+  DbBoardUsageSummaryTable,
+} from "./dbBoard/dbBoardUsageSummary.js";
+export type {
+  DbBoardBindingMode,
+  DbBoardBindingsMap,
+  DbBoardWorkspaceAccess,
+} from "./dbBoard/dbBoardBindings.js";
 
 // Skills service — ISkillsService is both a type (interface) and value (descriptor)
 export { ISkillsService } from "./skills/skills.js";
