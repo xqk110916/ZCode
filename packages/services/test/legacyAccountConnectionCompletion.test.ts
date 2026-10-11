@@ -13,6 +13,8 @@ const oldFields = {
   },
 };
 
+const instances: Array<{ close: () => void }> = [];
+
 async function setup(raw: unknown = oldFields) {
   const home = await mkdtemp(join(tmpdir(), "zcode-team-migration-"));
   homes.push(home);
@@ -23,13 +25,17 @@ async function setup(raw: unknown = oldFields) {
   await writeFile(file, JSON.stringify(raw));
   vi.resetModules();
   const { createSettingServiceWithMigrations } = await import("../src/setting/settingService.js");
+  const instance = createSettingServiceWithMigrations();
+  instances.push(instance);
   return {
-    ...createSettingServiceWithMigrations(),
+    ...instance,
     read: async () => JSON.parse(await readFile(file, "utf8")),
   };
 }
 
 afterEach(async () => {
+  // 先关 ProjectSessionStore 的 sqlite 句柄，否则 Windows 下 rm 删临时目录会 EBUSY。
+  for (const instance of instances.splice(0)) instance.close();
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
   await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })));

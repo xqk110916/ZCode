@@ -35,14 +35,20 @@ function makeTempHome(): string {
   return home;
 }
 
+const createdServices: Array<{ close: () => void }> = [];
+
 async function createSettingServiceInHome(home: string): Promise<ISettingService> {
   process.env.HOME = home;
   vi.resetModules();
   const mod = await import("../src/setting/settingService.js");
-  return mod.createSettingService();
+  // 用带 close 的工厂创建，afterEach 关 sqlite 句柄（否则 Windows 删临时目录 EBUSY）。
+  const instance = mod.createSettingServiceWithMigrations();
+  createdServices.push(instance);
+  return instance.service;
 }
 
 afterEach(() => {
+  for (const instance of createdServices.splice(0)) instance.close();
   vi.doUnmock("node:fs/promises");
   vi.restoreAllMocks();
   restoreEnvValue("HOME", originalHome);
@@ -328,9 +334,12 @@ describe("settingService", () => {
     releaseFirstSettingsWrite?.();
     await Promise.all([getPromise, updatePromise]);
 
+    // 项目三字段改存 KV 后 setting.json 不含 recentProjects；文件断言只查迁移字段。
     expect(JSON.parse(readFileSync(settingsFile, "utf-8"))).toMatchObject({
       messageStreamShowReasoning: true,
       messageStreamShowReasoningMigrationInitialized: true,
+    });
+    await expect(service.get()).resolves.toMatchObject({
       recentProjects: ["/tmp/new-project"],
     });
   });
@@ -635,13 +644,6 @@ describe("settingService", () => {
 
     await expect(pendingSettings).resolves.toMatchObject({
       locale: "en-US",
-      recentProjects: ["/tmp/workspace-a"],
-      lastWorkspaceSession: [
-        {
-          kind: "local",
-          workspacePath: "/tmp/workspace-a",
-        },
-      ],
     });
     expect(
       readdirSync(settingsDir).filter((file) => file.startsWith("setting.json.corrupt-")),
@@ -712,9 +714,9 @@ describe("settingService", () => {
 
     const service = await createSettingServiceInHome(home);
 
+    // 项目三字段走 KV，setting.json 写的旧值不透出（从零开始语义）；只断言文件字段。
     await expect(service.get()).resolves.toMatchObject({
       locale: "en-US",
-      recentProjects: ["/tmp/demo"],
     });
     await expect(service.get()).resolves.not.toHaveProperty("zcodeEndpointOrigin");
   });
@@ -1025,23 +1027,9 @@ describe("settingService", () => {
     );
 
     const reloadedService = await createSettingServiceInHome(home);
+    // 项目三字段走 KV，旧 setting.json 里的 lastWorkspaceSession 不透出（从零开始语义）。
     const settings = await reloadedService.get();
-    expect(settings.lastWorkspaceSession).toHaveLength(2);
-    expect(settings.lastWorkspaceSession?.[0]).toMatchObject({
-      kind: "remote",
-      workspacePath: "/workspace/demo",
-      target: {
-        kind: "docker",
-        container: "demo",
-      },
-      lastOpenedAt: 456,
-      lastConnectionStatus: "failed",
-    });
-    expect(settings.lastWorkspaceSession?.[1]).toEqual({
-      kind: "local",
-      workspacePath: "/tmp/local-demo",
-      workspacePurpose: "project",
-    });
+    expect(settings.lastWorkspaceSession).toHaveLength(0);
   });
 
   it("在用户目录下兜底创建默认项目，并准确返回是否首次创建", async () => {

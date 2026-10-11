@@ -707,6 +707,12 @@ const managedDbBoardAgentServices = new WeakMap<
   { dispose(): void }
 >();
 
+/** settingService 内部 ProjectSessionStore 的 sqlite 收口；dispose 时统一关闭（Windows EBUSY 防护）。 */
+const localSettingsForDispose = new WeakMap<
+  ServiceCollection,
+  { close(): void }
+>();
+
 export function registerManagedCuaHelperHostForDispose(
   services: ServiceCollection,
   host: ManagedCuaHelperHostDispose,
@@ -2791,6 +2797,9 @@ export function createLocalServices(options: {
   // Paperclip 的 WS 订阅与事件 Emitter 随 services 释放统一关闭（侧表模式，best-effort）。
   managedPaperclipServices.set(services, paperclipService);
 
+  // settingService 内部 ProjectSessionStore 的 sqlite 句柄随 dispose 收口（Windows EBUSY 防护）。
+  if (localSettings) localSettingsForDispose.set(services, localSettings);
+
   // 即使初始配置关闭也必须登记 lifecycle disposer：terminal fence 需要早于任意延迟 setting/acquire
   // 恢复，不能把"当前还没有 Helper"误当成"不需要生命周期所有者"。dispose 时串行 stop host。
   registerManagedCuaHelperHostForDispose(services, {
@@ -2961,6 +2970,11 @@ export function disposeServiceResources(services: ServiceCollection): void {
   // 关闭共享 tasks-index sqlite 句柄（Windows 上悬着句柄会让后续目录清理撞 EBUSY）
   for (const repo of sharedSqliteRepos.get(services) ?? []) repo.close();
   sharedSqliteRepos.delete(services);
+  // 同因：settingService 内部的 ProjectSessionStore sqlite 句柄也要收口，
+  // 否则测试 rm 临时 HOME 目录会 EBUSY（Windows 文件锁）。
+  const managedSettingServices = localSettingsForDispose.get(services);
+  if (managedSettingServices) managedSettingServices.close();
+  localSettingsForDispose.delete(services);
   providerRuntimes.get(services)?.dispose();
   for (const dispose of providerProvisioningTriggerDisposers.get(services) ?? []) dispose();
   providerProvisioningTriggerDisposers.delete(services);
@@ -3015,5 +3029,7 @@ export async function disposeServiceResourcesAndWait(services: ServiceCollection
     .catch(() => {});
   managedPaperclipServices.get(services)?.dispose();
   managedDbBoardAgentServices.get(services)?.dispose();
+  localSettingsForDispose.get(services)?.close();
+  localSettingsForDispose.delete(services);
 }
 export { localRuntimeNetworkCapture } from "./zcode-agent/localRuntimeNetworkCapture.js";
