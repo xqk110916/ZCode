@@ -1,0 +1,61 @@
+{
+  "name": "@zcode/boardhub-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.cjs",
+  "scripts": {
+    "build:main": "tsup",
+    "dev": "tsup && electron .",
+    "bundle": "node scripts/bundle.mjs",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "electron": "41.0.3",
+    "electron-builder": "^26.8.1",
+    "tsup": "^8.4.0",
+    "typescript": "^6.0.2"
+  },
+  "build": {
+    "appId": "com.zcode.boardhub",
+    "productName": "BoardHub",
+    "icon": "build/icon.png",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/server",
+        "to": "boardhub/server"
+      },
+      {
+        "from": "resources/web",
+        "to": "boardhub/web"
+      }
+    ],
+    "asar": false,
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
+  }
+}

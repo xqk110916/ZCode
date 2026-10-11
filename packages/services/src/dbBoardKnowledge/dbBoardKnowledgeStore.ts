@@ -4,6 +4,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { withFileLock } from "@zcode/shared/node";
 import { getAppConfigDir } from "#src/paths.js";
 import { atomicWriteJson } from "#src/fs/atomicFileUtils.js";
 import type { DbBoardKnowledge, DbBoardKnowledgeProfile } from "./dbBoardKnowledge.js";
@@ -58,8 +59,17 @@ export class DbBoardKnowledgeStore {
     }
   }
 
+  /** 写入均为「load 整档 → 改单字段 → 原子替换」，统一走共享文件锁防跨进程交错（BoardHub 双实例场景）。 */
+  private async mutate(mutate: (doc: DbBoardKnowledgeDoc) => DbBoardKnowledgeDoc): Promise<void> {
+    await withFileLock(this.path, async () => {
+      const doc = await this.load();
+      const next = mutate(doc);
+      // 外层 withFileLock 已持锁，内建锁不可重入，显式关闭防自等死锁。
+      await atomicWriteJson(this.path, { ...next }, { useFileLock: false });
+    });
+  }
+
   async saveProfile(profile: DbBoardKnowledgeProfile): Promise<void> {
-    const doc = await this.load();
     // 剥离密码字段后落盘（dbBinding 只含连接 id，无敏感信息）
     const safeProfile: DbBoardKnowledgeProfile = {
       projectRoot: profile.projectRoot,
@@ -74,20 +84,18 @@ export class DbBoardKnowledgeStore {
         : {}),
       ...(profile.dbBinding ? { dbBinding: profile.dbBinding } : {}),
     };
-    await atomicWriteJson(this.path, { ...doc, profile: safeProfile });
+    await this.mutate((doc) => ({ ...doc, profile: safeProfile }));
   }
 
   async saveKnowledge(knowledge: DbBoardKnowledge): Promise<void> {
-    const doc = await this.load();
-    await atomicWriteJson(this.path, { ...doc, knowledge });
+    await this.mutate((doc) => ({ ...doc, knowledge }));
   }
 
   async deleteKnowledge(): Promise<void> {
-    const doc = await this.load();
-    await atomicWriteJson(this.path, { profile: doc.profile });
+    await this.mutate((doc) => ({ profile: doc.profile }));
   }
 
   async deleteAll(): Promise<void> {
-    await atomicWriteJson(this.path, {});
+    await this.mutate(() => ({}));
   }
 }

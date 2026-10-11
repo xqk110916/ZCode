@@ -7531,14 +7531,17 @@ const enUS: Record<string, string> = {
   "paperclip.agents.deleted": "Deleted {name}",
   "paperclip.form.dispatcherBadge": "Lead",
   "paperclip.addAgent.alreadyAdded": "Added",
-  "paperclip.addAgent.alreadyAddedHint": "This CLI is already on the team; each CLI can only be added once",
+  "paperclip.addAgent.alreadyAddedHint":
+    "This CLI is already on the team; each CLI can only be added once",
   "paperclip.addAgent.becameDispatcher": " (set as lead agent)",
   "paperclip.agentConfig.dispatcher": "Lead agent",
-  "paperclip.agentConfig.dispatcherHint": "Dispatch owner: new tasks default to it, and auto-dispatch is decided by it",
+  "paperclip.agentConfig.dispatcherHint":
+    "Dispatch owner: new tasks default to it, and auto-dispatch is decided by it",
   "paperclip.agentConfig.dispatcherActive": "This is the lead agent (dispatch owner)",
   "paperclip.agentConfig.dispatcherSwitching": "Switching lead agent…",
   "paperclip.agentConfig.dispatcherSwitchFailed": "Failed to switch lead agent. Please retry.",
-  "paperclip.agentConfig.modelCustomHint": "You can also type a model ID manually (takes priority over the dropdown)",
+  "paperclip.agentConfig.modelCustomHint":
+    "You can also type a model ID manually (takes priority over the dropdown)",
   "settings.paperclip.serverUrl": "Server URL",
   "settings.paperclip.serverUrlHint":
     "Leave empty to use the default or the PAPERCLIP_SERVER_URL env var.",
@@ -7555,22 +7558,29 @@ const enUS: Record<string, string> = {
   "settings.paperclip.testFailed": "Connection failed: {error}",
 
   "workspace.openDbBoardSettings": "Database Board",
-  "dbboard.serviceUnavailable": "Database board service is unavailable (not registered on this host).",
+  "dbboard.serviceUnavailable":
+    "Database board service is unavailable (not registered on this host).",
   "dbboard.agent.chat": "Ask",
-  "dbboard.agent.chatHint": "Ask the DB assistant: carries board connection, knowledge base and read-only query tools",
+  "dbboard.agent.chatHint":
+    "Ask the DB assistant: carries board connection, knowledge base and read-only query tools",
   "dbboard.agent.chatTitle": "Database Assistant",
   "dbboard.agent.placeholder": "Describe a business question, e.g. how many documents this year",
-  "dbboard.agent.note": "Starts an assistant chat session (read-only first, writes need confirmation, no delete).",
+  "dbboard.agent.note":
+    "Starts an assistant chat session (read-only first, writes need confirmation, no delete).",
   "dbboard.agent.send": "Start Chat",
   "dbboard.agent.error": "Failed to create session: {message}",
   "dbboard.binding.pin": "Bind current connection to this project",
-  "dbboard.binding.unpin": "Unbind this project (all projects regain access once every binding is cleared)",
+  "dbboard.binding.unpin":
+    "Unbind this project (all projects regain access once every binding is cleared)",
   "dbboard.binding.confirmTitle": "Bind the database connection to this project?",
-  "dbboard.binding.confirmDescription": "Bind \"{connection}\" to project {workspace}. Once enabled, only projects with a bound connection can use the database board and the DB assistant; other projects need their own binding.",
+  "dbboard.binding.confirmDescription":
+    'Bind "{connection}" to project {workspace}. Once enabled, only projects with a bound connection can use the database board and the DB assistant; other projects need their own binding.',
   "dbboard.binding.bindAction": "Bind to this project",
   "dbboard.binding.blockedTitle": "This project has no database connection bound",
-  "dbboard.binding.blockedDescription": "Workspace binding is enabled: only projects with a bound connection can use the database board and the DB assistant. Bind a connection to this project to get access.",
-  "dbboard.agent.notBound": "This project has no database connection bound, so the DB assistant cannot start. Bind one in the database board first.",
+  "dbboard.binding.blockedDescription":
+    "Workspace binding is enabled: only projects with a bound connection can use the database board and the DB assistant. Bind a connection to this project to get access.",
+  "dbboard.agent.notBound":
+    "This project has no database connection bound, so the DB assistant cannot start. Bind one in the database board first.",
   "dbboard.tab.overview": "Overview",
   "dbboard.tab.explorer": "Explorer",
   "dbboard.tab.data": "Data",
@@ -7583,8 +7593,10 @@ const enUS: Record<string, string> = {
   "dbboard.knowledge.summaryGenerate": "Generate Summary",
   "dbboard.knowledge.summaryRefresh": "Refresh",
   "dbboard.knowledge.summaryComputing": "Counting rows per table, this may take up to a minute…",
-  "dbboard.knowledge.summaryEmptyHint": "Generate a database overview: per-table row counts and frequently used business tables (first run may take tens of seconds).",
-  "dbboard.knowledge.summaryNoKnowledge": "Build the knowledge base first to generate the overview (frequent tables come from knowledge cards).",
+  "dbboard.knowledge.summaryEmptyHint":
+    "Generate a database overview: per-table row counts and frequently used business tables (first run may take tens of seconds).",
+  "dbboard.knowledge.summaryNoKnowledge":
+    "Build the knowledge base first to generate the overview (frequent tables come from knowledge cards).",
   "dbboard.knowledge.summaryGeneratedAt": "Generated at {time}",
   "dbboard.knowledge.summarySourceCount": "rows counted per table",
   "dbboard.knowledge.summaryTables": "Total Tables",
@@ -7592,7 +7604,8 @@ const enUS: Record<string, string> = {
   "dbboard.knowledge.summaryDomains": "Business Domains",
   "dbboard.knowledge.summaryCounted": "Rows Counted",
   "dbboard.knowledge.summaryFrequent": "Frequently Used Business Tables",
-  "dbboard.knowledge.summaryFrequentHint": "knowledge tables with ≥1000 rows, sorted by row count (row count approximates usage)",
+  "dbboard.knowledge.summaryFrequentHint":
+    "knowledge tables with ≥1000 rows, sorted by row count (row count approximates usage)",
   "dbboard.knowledge.summaryFrequentEmpty": "No business table reaches the row threshold.",
   "dbboard.knowledge.setupExpand": "Show setup",
   "dbboard.knowledge.setupCollapse": "Hide setup",
@@ -7641,7 +7654,8 @@ const enUS: Record<string, string> = {
   "dbboard.knowledge.cardDomain": "Domain",
   "dbboard.knowledge.cardDomainPlaceholder": "e.g. Documents",
   "dbboard.knowledge.cardPurpose": "Business Purpose",
-  "dbboard.knowledge.cardPurposePlaceholder": "One sentence on what this table stores and how it is used",
+  "dbboard.knowledge.cardPurposePlaceholder":
+    "One sentence on what this table stores and how it is used",
   "dbboard.knowledge.cardColumns": "Key Columns (per line: column=meaning)",
   "dbboard.knowledge.cardRelations": "Relations (per line: table|ON condition|kind)",
   "dbboard.knowledge.cardNotes": "Notes",
@@ -7655,7 +7669,8 @@ const enUS: Record<string, string> = {
   "dbboard.knowledge.pickerFilter": "Filter by table / comment / domain…",
   "dbboard.knowledge.noCard": "No card",
   "dbboard.knowledge.cardDeleteTitle": "Delete this knowledge card?",
-  "dbboard.knowledge.cardDeleteDescription": "Only the card for {table} is removed; the next build regenerates it from evidence.",
+  "dbboard.knowledge.cardDeleteDescription":
+    "Only the card for {table} is removed; the next build regenerates it from evidence.",
   "dbboard.knowledge.source.distilled": "LLM distilled",
   "dbboard.knowledge.source.extracted": "Code extracted",
   "dbboard.knowledge.source.db-comment": "DB comment",
@@ -7813,6 +7828,18 @@ const enUS: Record<string, string> = {
   "globalNotice.highspeed.imageSummary": "{tokens} tokens · {duration}s saved",
   "globalNotice.highspeed.close": "Close Highspeed share card",
   ...requestSecurityMessagesEnUS,
-};
+
+  "boardhub.tab.dbBoard": "DB Board",
+  "boardhub.tab.paperclip": "Tasks",
+  "boardhub.tab.settings": "Settings",
+  "boardhub.theme.toggle": "Toggle theme",
+  "boardhub.model.title": "AI Model",
+  "boardhub.model.description":
+    "Configure an OpenAI-compatible endpoint to enable natural-language dashboard generation and knowledge distillation; browsing, queries and manual dashboards work without it.",
+  "boardhub.model.baseUrl": "Base URL",
+  "boardhub.model.modelId": "Model ID",
+  "boardhub.model.apiKey": "API Key (optional for local gateways)",
+  "boardhub.model.save": "Save",
+  "boardhub.model.saved": "Saved",};
 
 export default enUS;

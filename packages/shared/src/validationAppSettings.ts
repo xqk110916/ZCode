@@ -170,6 +170,19 @@ const paperclipServerUrlSchema = z.preprocess((value) => {
   return normalized ?? undefined;
 }, z.string().optional());
 
+/** BoardHub 模型端点（OpenAI 兼容）：仅接受 http(s) URL，坏值丢弃该字段。 */
+const boardhubModelBaseUrlSchema = z.preprocess((value) => {
+  if (typeof value !== "string" || !value.trim()) {
+    return undefined;
+  }
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}, z.string().optional());
+
 function sanitizeZCodeEndpointOrigin(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return value;
@@ -535,6 +548,8 @@ const appSettingsObjectSchema = z.object({
   zcodeEndpointOrigin: zcodeEndpointOriginSchema.optional(),
   paperclipServerUrl: paperclipServerUrlSchema.optional(),
   paperclipAutoClaim: z.boolean().optional(),
+  boardhubModelBaseUrl: boardhubModelBaseUrlSchema.optional(),
+  boardhubModelId: z.string().trim().min(1).optional(),
 });
 
 export const appSettingsSchema = z.preprocess(
@@ -632,4 +647,6 @@ export const appSettingsPatchSchema = z.object({
   zcodeEndpointOrigin: zcodeEndpointOriginSchema.optional(),
   paperclipServerUrl: paperclipServerUrlSchema.optional(),
   paperclipAutoClaim: z.boolean().optional(),
+  boardhubModelBaseUrl: boardhubModelBaseUrlSchema.optional(),
+  boardhubModelId: z.string().trim().min(1).optional(),
 });

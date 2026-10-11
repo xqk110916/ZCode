@@ -38,7 +38,7 @@ interface BoardModel {
   interactionsByIssueId: Readonly<Record<string, readonly PaperclipInteraction[] | undefined>>;
   onOpen: (issueId: string) => void;
   onMarkDone: (issueId: string) => void;
-  onExecuteInZCode: (issueId: string) => void;
+  onExecuteInZCode?: (issueId: string) => void;
   onAcceptReview: (issueId: string, comment: string) => Promise<boolean>;
   onSendBack: (issueId: string, comment: string) => Promise<boolean>;
   onReply: (issueId: string, body: string) => Promise<boolean>;
@@ -100,9 +100,8 @@ function IssueBranch({ node, model }: { node: PaperclipIssueTreeNode; model: Boa
         onMarkDone={() => model.onMarkDone(issue.id)}
         onOpen={() => model.onOpen(issue.id)}
         onExecuteInZCode={
-          issue.assigneeAgentId !== null &&
-          issue.assigneeAgentId === model.zcodeAgentId
-            ? () => model.onExecuteInZCode(issue.id)
+          issue.assigneeAgentId !== null && issue.assigneeAgentId === model.zcodeAgentId
+            ? () => model.onExecuteInZCode?.(issue.id)
             : undefined
         }
         zcodeAgentOwned={

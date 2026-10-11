@@ -75,7 +75,13 @@ export function PaperclipConnectionBar({
               : "paperclip.localServer.stop",
           })}
         </Button>
-        <Button variant="outline" size="sm" className="text-ui-sm" disabled={refreshing} onClick={onRefresh}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-ui-sm"
+          disabled={refreshing}
+          onClick={onRefresh}
+        >
           <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
           {intl.formatMessage({ id: "paperclip.refresh" })}
         </Button>

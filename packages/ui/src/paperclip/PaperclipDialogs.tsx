@@ -30,7 +30,7 @@ export function PaperclipDialogs({
   setAddAgentOpen,
 }: {
   paperclip: UsePaperclipState;
-  workspacePath: string;
+  workspacePath?: string;
   currentWorkspaceProjectId: string | null;
   createOpen: boolean;
   setCreateOpen: (open: boolean) => void;
@@ -86,9 +86,7 @@ export function PaperclipDialogs({
         detectLocalAgentAdapters={paperclip.detectLocalAgentAdapters}
         existingAdapterTypes={
           new Set(
-            paperclip.agents.flatMap((agent) =>
-              agent.adapterType ? [agent.adapterType] : [],
-            ),
+            paperclip.agents.flatMap((agent) => (agent.adapterType ? [agent.adapterType] : [])),
           )
         }
         onCreate={async (input) => {

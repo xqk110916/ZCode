@@ -7016,7 +7016,8 @@ const zhCN: Record<string, string> = {
   "paperclip.createTask.description": "任务会指派给所选 agent，由 Paperclip 唤醒执行。",
   "paperclip.agents.title": "Agent 团队",
   "paperclip.agents.empty": "Paperclip 中还没有 agent，请先在其界面完成雇佣。",
-  "paperclip.agents.emptyNew": "还没有 agent。把你本地已登录的 CLI（Claude Code、Kimi、Grok 等）注册上来即可开始派任务。",
+  "paperclip.agents.emptyNew":
+    "还没有 agent。把你本地已登录的 CLI（Claude Code、Kimi、Grok 等）注册上来即可开始派任务。",
   "paperclip.addAgent.open": "添加 agent",
   "paperclip.addAgent.title": "添加本地 agent",
   "paperclip.addAgent.description":
@@ -7030,7 +7031,8 @@ const zhCN: Record<string, string> = {
   "paperclip.addAgent.submit": "添加",
   "paperclip.addAgent.created": "已添加 {name}",
   "paperclip.agents.managedExternally": "在 Paperclip 中管理",
-  "paperclip.agents.roleDispatcherHint": "调度负责人：接收自动分派的任务，评估后自己处理或拆解为子任务指派。",
+  "paperclip.agents.roleDispatcherHint":
+    "调度负责人：接收自动分派的任务，评估后自己处理或拆解为子任务指派。",
   "paperclip.agents.roleWorkerHint": "执行者：接收指派的任务并执行，可在内部使用子 agent 协同。",
   "paperclip.agentStatus.active": "活跃",
   "paperclip.agentStatus.idle": "空闲",
@@ -7043,7 +7045,8 @@ const zhCN: Record<string, string> = {
   "paperclip.agents.queueCount": "队列 {count}",
   "paperclip.agentConfig.open": "配置 agent",
   "paperclip.agentConfig.title": "配置 {name}",
-  "paperclip.agentConfig.description": "切换模型与推理力度；改动立即生效并记录到 Paperclip 的配置修订历史。",
+  "paperclip.agentConfig.description":
+    "切换模型与推理力度；改动立即生效并记录到 Paperclip 的配置修订历史。",
   "paperclip.agentConfig.name": "名称",
   "paperclip.agentConfig.model": "模型",
   "paperclip.agentConfig.modelDefault": "默认（adapter 决定）",
@@ -7051,10 +7054,12 @@ const zhCN: Record<string, string> = {
   "paperclip.agentConfig.modelsDiscovered": "本机网关（Claude Code 配置）",
   "paperclip.agentConfig.modelsBuiltin": "Paperclip 内置清单",
   "paperclip.agentConfig.modelCustomPlaceholder": "或手动输入模型 ID（优先生效）",
-  "paperclip.agentConfig.discoveredHint": "已从本机 Claude Code 的第三方网关发现以上模型；执行与显示一致。",
+  "paperclip.agentConfig.discoveredHint":
+    "已从本机 Claude Code 的第三方网关发现以上模型；执行与显示一致。",
   "paperclip.agentConfig.effort": "推理力度",
   "paperclip.agentConfig.effortUnchanged": "保持不变",
-  "paperclip.agentConfig.effortHint": "不同模型支持的档位不同；不支持的组合会被 Paperclip 拒绝并提示。",
+  "paperclip.agentConfig.effortHint":
+    "不同模型支持的档位不同；不支持的组合会被 Paperclip 拒绝并提示。",
   "paperclip.progress.stageTodo": "待办",
   "paperclip.progress.stageRun": "执行",
   "paperclip.progress.stageReview": "审查",
@@ -7073,7 +7078,8 @@ const zhCN: Record<string, string> = {
   "paperclip.progress.noHistory": "还没有心跳。",
   "paperclip.progress.elapsed": "已 {duration}",
   "paperclip.progress.comments": "执行记录",
-  "paperclip.progress.noActivity": "还没有执行记录。任务开始后，这里会显示心跳状态和 agent 的最新说明。",
+  "paperclip.progress.noActivity":
+    "还没有执行记录。任务开始后，这里会显示心跳状态和 agent 的最新说明。",
   "paperclip.progress.liveCount": "{count} 个正在执行",
   "paperclip.progress.authorAgent": "Agent",
   "paperclip.progress.authorUser": "你",
@@ -7094,7 +7100,8 @@ const zhCN: Record<string, string> = {
   "paperclip.banner.executeNext": "执行下一个",
   "paperclip.banner.autoClaim": "自动认领",
   "paperclip.toast.autoClaimed": "已自动认领 {identifier}，已在对应工作区开始执行",
-  "paperclip.issues.executeInZCodeHint": "认领该任务并在 ZCode 本地执行；进度由 ZCode 把控，完成后可回写 Paperclip。",
+  "paperclip.issues.executeInZCodeHint":
+    "认领该任务并在 ZCode 本地执行；进度由 ZCode 把控，完成后可回写 Paperclip。",
   "paperclip.toast.claimedByZCode": "已认领，任务已带到 ZCode 执行",
   "paperclip.issues.children": "子任务 {done}/{total}",
   "paperclip.issues.openChildren": "还有 {count} 个未完成",
@@ -7163,7 +7170,8 @@ const zhCN: Record<string, string> = {
   "paperclip.agents.delete": "删除",
   "paperclip.agents.deleteConfirmYes": "确认删除",
   "paperclip.agents.deleteConfirmNo": "取消",
-  "paperclip.agents.deleteDispatcherHint": "删除后团队将没有主 Agent，新任务默认指派与自动分派需要先补位",
+  "paperclip.agents.deleteDispatcherHint":
+    "删除后团队将没有主 Agent，新任务默认指派与自动分派需要先补位",
   "paperclip.agents.deleted": "已删除 {name}",
   "paperclip.form.dispatcherBadge": "主 Agent",
   "paperclip.addAgent.alreadyAdded": "已添加",
@@ -7200,11 +7208,14 @@ const zhCN: Record<string, string> = {
   "dbboard.binding.pin": "将当前连接绑定到本项目",
   "dbboard.binding.unpin": "解除本项目绑定（清空全部绑定后恢复全员可用）",
   "dbboard.binding.confirmTitle": "绑定数据库连接到当前项目？",
-  "dbboard.binding.confirmDescription": "将「{connection}」绑定到项目 {workspace}。启用后只有绑定了连接的项目可以使用数据库看板与数据库助手，其他项目需各自绑定后才能访问。",
+  "dbboard.binding.confirmDescription":
+    "将「{connection}」绑定到项目 {workspace}。启用后只有绑定了连接的项目可以使用数据库看板与数据库助手，其他项目需各自绑定后才能访问。",
   "dbboard.binding.bindAction": "绑定到本项目",
   "dbboard.binding.blockedTitle": "当前项目未绑定数据库连接",
-  "dbboard.binding.blockedDescription": "已启用「工作区绑定」：只有绑定了连接的项目可以使用数据库看板与数据库助手。选择一个连接绑定到当前项目即可访问。",
-  "dbboard.agent.notBound": "当前项目未绑定数据库连接，无法启动数据库助手。请先在数据库看板中绑定。",
+  "dbboard.binding.blockedDescription":
+    "已启用「工作区绑定」：只有绑定了连接的项目可以使用数据库看板与数据库助手。选择一个连接绑定到当前项目即可访问。",
+  "dbboard.agent.notBound":
+    "当前项目未绑定数据库连接，无法启动数据库助手。请先在数据库看板中绑定。",
   "dbboard.tab.overview": "概览",
   "dbboard.tab.explorer": "探索看板",
   "dbboard.tab.data": "数据浏览",
@@ -7217,8 +7228,10 @@ const zhCN: Record<string, string> = {
   "dbboard.knowledge.summaryGenerate": "生成汇总",
   "dbboard.knowledge.summaryRefresh": "刷新",
   "dbboard.knowledge.summaryComputing": "正在逐表统计行数，可能需要数十秒…",
-  "dbboard.knowledge.summaryEmptyHint": "生成数据库概览：统计各表行数并列出常用业务表（首次可能需要数十秒）。",
-  "dbboard.knowledge.summaryNoKnowledge": "构建知识库后可生成数据库概览（常用业务表清单来自知识卡）。",
+  "dbboard.knowledge.summaryEmptyHint":
+    "生成数据库概览：统计各表行数并列出常用业务表（首次可能需要数十秒）。",
+  "dbboard.knowledge.summaryNoKnowledge":
+    "构建知识库后可生成数据库概览（常用业务表清单来自知识卡）。",
   "dbboard.knowledge.summaryGeneratedAt": "生成于 {time}",
   "dbboard.knowledge.summarySourceCount": "行数为逐表统计",
   "dbboard.knowledge.summaryTables": "表总数",
@@ -7226,7 +7239,8 @@ const zhCN: Record<string, string> = {
   "dbboard.knowledge.summaryDomains": "业务域",
   "dbboard.knowledge.summaryCounted": "已统计行数",
   "dbboard.knowledge.summaryFrequent": "常用业务表",
-  "dbboard.knowledge.summaryFrequentHint": "行数 ≥1000 的知识表，按行数降序（行数是使用频繁度近似）",
+  "dbboard.knowledge.summaryFrequentHint":
+    "行数 ≥1000 的知识表，按行数降序（行数是使用频繁度近似）",
   "dbboard.knowledge.summaryFrequentEmpty": "没有行数达到阈值的业务表。",
   "dbboard.knowledge.setupExpand": "展开配置",
   "dbboard.knowledge.setupCollapse": "收起配置",
@@ -7283,12 +7297,14 @@ const zhCN: Record<string, string> = {
   "dbboard.knowledge.cardSave": "保存",
   "dbboard.knowledge.distill": "AI 蒸馏",
   "dbboard.knowledge.distilling": "蒸馏中…",
-  "dbboard.knowledge.distillHint": "用数据库注释与既有信息让 AI 生成这张表的知识卡草稿，结果回填表单后可再修改",
+  "dbboard.knowledge.distillHint":
+    "用数据库注释与既有信息让 AI 生成这张表的知识卡草稿，结果回填表单后可再修改",
   "dbboard.knowledge.pickerPlaceholder": "选择表…",
   "dbboard.knowledge.pickerFilter": "输入表名 / 注释 / 业务域筛选…",
   "dbboard.knowledge.noCard": "无知识卡",
   "dbboard.knowledge.cardDeleteTitle": "删除该知识卡？",
-  "dbboard.knowledge.cardDeleteDescription": "仅删除 {table} 的知识卡片，下次构建会按证据重新生成。",
+  "dbboard.knowledge.cardDeleteDescription":
+    "仅删除 {table} 的知识卡片，下次构建会按证据重新生成。",
   "dbboard.knowledge.source.distilled": "LLM 蒸馏",
   "dbboard.knowledge.source.extracted": "代码抽取",
   "dbboard.knowledge.source.db-comment": "数据库注释",
@@ -7359,7 +7375,8 @@ const zhCN: Record<string, string> = {
   "dbboard.data.insertSubmit": "新增",
   "dbboard.data.updateSubmit": "保存修改",
   "dbboard.logs.title": "操作日志",
-  "dbboard.logs.tabHint": "每次新增/修改都与日志同事务写入目标库；点击日志行可展开变更 diff，active 状态的日志可回退。",
+  "dbboard.logs.tabHint":
+    "每次新增/修改都与日志同事务写入目标库；点击日志行可展开变更 diff，active 状态的日志可回退。",
   "dbboard.logs.filterAll": "全部表",
   "dbboard.logs.filterCurrent": "仅当前表（{table}）",
   "dbboard.logs.filterCurrentNone": "仅当前表（先在数据浏览中选择）",
@@ -7442,6 +7459,18 @@ const zhCN: Record<string, string> = {
   "globalNotice.highspeed.imageSummary": "{tokens} tokens · 节省 {duration} 秒",
   "globalNotice.highspeed.close": "关闭加速分享卡片",
   ...requestSecurityMessagesZhCN,
-};
+
+  "boardhub.tab.dbBoard": "数据库看板",
+  "boardhub.tab.paperclip": "任务编排",
+  "boardhub.tab.settings": "设置",
+  "boardhub.theme.toggle": "切换深浅主题",
+  "boardhub.model.title": "AI 模型",
+  "boardhub.model.description":
+    "配置 OpenAI 兼容端点后，看板自然语言生成与知识库蒸馏可用；不配置时仅浏览 / 查询 / 手动看板可用。",
+  "boardhub.model.baseUrl": "Base URL",
+  "boardhub.model.modelId": "模型 ID",
+  "boardhub.model.apiKey": "API Key（本地网关可留空）",
+  "boardhub.model.save": "保存",
+  "boardhub.model.saved": "已保存",};
 
 export default zhCN;

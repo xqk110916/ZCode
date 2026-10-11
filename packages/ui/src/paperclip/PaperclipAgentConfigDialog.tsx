@@ -188,7 +188,10 @@ export function PaperclipAgentConfigDialog({
               </p>
             </div>
             {switchingDispatcher ? (
-              <Loader2 className="size-4 shrink-0 animate-spin text-foreground-subtle" aria-hidden />
+              <Loader2
+                className="size-4 shrink-0 animate-spin text-foreground-subtle"
+                aria-hidden
+              />
             ) : (
               <Switch
                 checked={isDispatcher}
@@ -273,7 +276,9 @@ export function PaperclipAgentConfigDialog({
               >
                 <SelectTrigger>
                   <SelectValue
-                    placeholder={intl.formatMessage({ id: "paperclip.agentConfig.effortUnchanged" })}
+                    placeholder={intl.formatMessage({
+                      id: "paperclip.agentConfig.effortUnchanged",
+                    })}
                   />
                 </SelectTrigger>
                 <SelectContent>
@@ -300,7 +305,9 @@ export function PaperclipAgentConfigDialog({
               id="paperclip-agent-custom-model"
               value={customModel}
               onChange={(event) => setCustomModel(event.target.value)}
-              placeholder={intl.formatMessage({ id: "paperclip.agentConfig.modelCustomPlaceholder" })}
+              placeholder={intl.formatMessage({
+                id: "paperclip.agentConfig.modelCustomPlaceholder",
+              })}
               spellCheck={false}
               className="font-mono"
             />

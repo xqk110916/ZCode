@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 对话框/任务详情是表单与多场景堆叠的天然长组件，拆分会切断选项渲染与提交编排的内聚；先收口单文件，与 Root.tsx 同例。 */
 /**
  * Paperclip 创建任务对话框：标题/描述/优先级/指派。
  * 指派用可视化选项组（自动分派置顶主推，含分派指令的透明化预览）；优先级为分段
@@ -6,13 +7,13 @@
  */
 import { FolderOpen, Loader2, Plus, Sparkles, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
-import type {
-  PaperclipAgent,
-  PaperclipIssuePriority,
-  PaperclipProject,
-} from "@zcode/shared";
+import type { PaperclipAgent, PaperclipIssuePriority, PaperclipProject } from "@zcode/shared";
 import { PaperclipAdapterBrandIcon } from "@/paperclip/paperclipViews.js";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible.js";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible.js";
 import { Button } from "@/components/ui/button.js";
 import {
   Dialog,
@@ -47,7 +48,9 @@ export const PAPERCLIP_DISPATCH_DIRECTIVE = [
 /** 自动分派模式下拼装最终 description：用户描述 + 指令模板（用户可见可预期）。 */
 export function buildDispatchDescription(userDescription: string): string {
   const trimmed = userDescription.trim();
-  return trimmed === "" ? PAPERCLIP_DISPATCH_DIRECTIVE : `${trimmed}\n\n${PAPERCLIP_DISPATCH_DIRECTIVE}`;
+  return trimmed === ""
+    ? PAPERCLIP_DISPATCH_DIRECTIVE
+    : `${trimmed}\n\n${PAPERCLIP_DISPATCH_DIRECTIVE}`;
 }
 
 export interface PaperclipCreateDialogState {
@@ -97,7 +100,8 @@ export function PaperclipCreateTaskDialog({
   dispatcher: PaperclipAgent | null;
   projects: PaperclipProject[];
   /** 当前 ZCode 工作区绝对路径（「当前工作区」选项的 cwd）。 */
-  workspacePath: string;
+  /** 工作区路径；缺省（如 BoardHub 独立应用）时不提供「当前工作区」项目选项。 */
+  workspacePath?: string;
   /** 已绑定当前工作区的 Paperclip 项目 id（无则 null，选中时提交侧按需创建）。 */
   currentWorkspaceProjectId: string | null;
   submitting: boolean;
@@ -162,8 +166,7 @@ export function PaperclipCreateTaskDialog({
     );
   }
 
-  const canSubmit =
-    state.title.trim().length > 0 && !submitting && !(autoDispatch && !dispatcher);
+  const canSubmit = state.title.trim().length > 0 && !submitting && !(autoDispatch && !dispatcher);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -219,7 +222,10 @@ export function PaperclipCreateTaskDialog({
                         : "text-foreground-subtle hover:text-foreground",
                     )}
                   >
-                    <span className={cn("size-1.5 rounded-full", PRIORITY_DOT[priority])} aria-hidden />
+                    <span
+                      className={cn("size-1.5 rounded-full", PRIORITY_DOT[priority])}
+                      aria-hidden
+                    />
                     {intl.formatMessage({ id: priorityLabelKey(priority) })}
                   </button>
                 );
@@ -238,175 +244,178 @@ export function PaperclipCreateTaskDialog({
             />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <Label>{intl.formatMessage({ id: "paperclip.form.assignee" })}</Label>
-            <div role="radiogroup" aria-label={intl.formatMessage({ id: "paperclip.form.assignee" })} className="max-h-56 overflow-y-auto rounded-xl border border-border-subtle">
-              {renderOption({
-                key: "auto",
-                selected: autoDispatch,
-                onSelect: () => selectAssignee(PAPERCLIP_DISPATCH_ASSIGNEE),
-                children: (
-                  <>
-                    <Sparkles className="size-4 shrink-0 text-info" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">
-                        {intl.formatMessage({ id: "paperclip.form.assigneeAuto" })}
-                      </span>
-                      <span className="block truncate text-ui-sm text-foreground-subtlest">
-                        {dispatcher
-                          ? intl.formatMessage(
-                              { id: "paperclip.form.assigneeAutoBy" },
-                              { name: agentDisplayName(dispatcher) },
-                            )
-                          : intl.formatMessage({ id: "paperclip.form.dispatcherMissing" })}
-                      </span>
-                    </span>
-                    {autoDispatch && !dispatcher ? (
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        disabled={ensuringDispatcher}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onEnsureDispatcher();
-                        }}
-                      >
-                        {ensuringDispatcher ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : null}
-                        {intl.formatMessage({ id: "paperclip.form.createDispatcher" })}
-                      </Button>
-                    ) : null}
-                  </>
-                ),
-              })}
-              {agents.map((agent) =>
-                renderOption({
-                  key: agent.id,
-                  selected: state.assigneeAgentId === agent.id,
-                  onSelect: () => selectAssignee(agent.id),
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <Label>{intl.formatMessage({ id: "paperclip.form.assignee" })}</Label>
+              <div
+                role="radiogroup"
+                aria-label={intl.formatMessage({ id: "paperclip.form.assignee" })}
+                className="max-h-56 overflow-y-auto rounded-xl border border-border-subtle"
+              >
+                {renderOption({
+                  key: "auto",
+                  selected: autoDispatch,
+                  onSelect: () => selectAssignee(PAPERCLIP_DISPATCH_ASSIGNEE),
                   children: (
                     <>
-                      <PaperclipAdapterBrandIcon
-                        adapterType={agent.adapterType || ""}
-                        className="size-4 shrink-0 object-contain"
-                      />
-                      <span className="min-w-0 flex-1 truncate">
-                        {agentDisplayName(agent)}
-                        {agent.id === dispatcher?.id ? (
-                          <span className="ml-2 shrink-0 rounded bg-info-subtle px-1.5 py-0.5 text-ui-xs font-medium text-info">
-                            {intl.formatMessage({ id: "paperclip.form.dispatcherBadge" })}
-                          </span>
-                        ) : null}
-                      </span>
-                      {agent.adapterType ? (
-                        <span className="shrink-0 font-mono text-ui-sm text-foreground-subtlest">
-                          {agent.adapterType}
+                      <Sparkles className="size-4 shrink-0 text-info" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">
+                          {intl.formatMessage({ id: "paperclip.form.assigneeAuto" })}
                         </span>
+                        <span className="block truncate text-ui-sm text-foreground-subtlest">
+                          {dispatcher
+                            ? intl.formatMessage(
+                                { id: "paperclip.form.assigneeAutoBy" },
+                                { name: agentDisplayName(dispatcher) },
+                              )
+                            : intl.formatMessage({ id: "paperclip.form.dispatcherMissing" })}
+                        </span>
+                      </span>
+                      {autoDispatch && !dispatcher ? (
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          disabled={ensuringDispatcher}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onEnsureDispatcher();
+                          }}
+                        >
+                          {ensuringDispatcher ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : null}
+                          {intl.formatMessage({ id: "paperclip.form.createDispatcher" })}
+                        </Button>
                       ) : null}
                     </>
                   ),
-                }),
-              )}
-              {renderOption({
-                key: "none",
-                selected: state.assigneeAgentId === "",
-                onSelect: () => selectAssignee(""),
-                children: (
-                  <>
-                    <UserRound className="size-4 shrink-0 text-foreground-subtlest" />
-                    <span className="min-w-0 flex-1 truncate">
-                      {intl.formatMessage({ id: "paperclip.form.assigneeAny" })}
-                    </span>
-                  </>
-                ),
-              })}
-            </div>
-            {autoDispatch ? (
-              <Collapsible className="mt-1">
-                <CollapsibleTrigger className="text-ui-sm text-foreground-subtle underline-offset-2 hover:text-foreground hover:underline">
-                  {intl.formatMessage({ id: "paperclip.form.viewDirective" })}
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-surface-muted p-3 font-sans text-ui-sm text-foreground-subtle">
-                    {PAPERCLIP_DISPATCH_DIRECTIVE}
-                  </pre>
-                </CollapsibleContent>
-              </Collapsible>
-            ) : null}
-          </div>
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <Label>{intl.formatMessage({ id: "paperclip.form.workspace" })}</Label>
-            <div
-              role="radiogroup"
-              aria-label={intl.formatMessage({ id: "paperclip.form.workspace" })}
-              className="max-h-56 overflow-y-auto rounded-xl border border-border-subtle"
-            >
-              {renderOption({
-                key: "workspace-none",
-                selected: state.projectId === "",
-                onSelect: () => onStateChange({ ...state, projectId: "" }),
-                children: (
-                  <>
-                    <FolderOpen className="size-4 shrink-0 text-foreground-subtlest" />
-                    <span className="min-w-0 flex-1 truncate">
-                      {intl.formatMessage({ id: "paperclip.form.workspaceNone" })}
-                    </span>
-                  </>
-                ),
-              })}
-              {workspacePath ? (
-                renderOption({
-                  key: "workspace-current",
-                  selected:
-                    state.projectId === currentWorkspaceValue ||
-                    state.projectId === PAPERCLIP_CURRENT_WORKSPACE_PROJECT,
-                  onSelect: () =>
-                    onStateChange({ ...state, projectId: currentWorkspaceValue }),
-                  children: (
-                    <>
-                      <FolderOpen className="size-4 shrink-0 text-info" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">
-                          {intl.formatMessage({ id: "paperclip.form.workspaceCurrent" })}
-                        </span>
-                        <span className="block break-all font-mono text-ui-xs leading-snug text-foreground-subtlest">
-                          {workspacePath}
-                        </span>
-                        {currentWorkspaceProjectId === null ? (
-                          <span className="mt-0.5 block text-ui-xs text-foreground-subtlest">
-                            {intl.formatMessage({ id: "paperclip.form.workspaceWillCreate" })}
-                          </span>
-                        ) : null}
-                      </span>
-                    </>
-                  ),
-                })
-              ) : null}
-              {projects
-                .filter((project) => project.id !== currentWorkspaceProjectId)
-                .map((project) =>
+                })}
+                {agents.map((agent) =>
                   renderOption({
-                    key: project.id,
-                    selected: state.projectId === project.id,
-                    onSelect: () => onStateChange({ ...state, projectId: project.id }),
+                    key: agent.id,
+                    selected: state.assigneeAgentId === agent.id,
+                    onSelect: () => selectAssignee(agent.id),
                     children: (
                       <>
-                        <FolderOpen className="size-4 shrink-0 text-foreground-subtlest" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate">{project.name}</span>
-                          {project.codebase?.localFolder ? (
-                            <span className="block truncate font-mono text-ui-sm text-foreground-subtlest">
-                              {project.codebase.localFolder}
+                        <PaperclipAdapterBrandIcon
+                          adapterType={agent.adapterType || ""}
+                          className="size-4 shrink-0 object-contain"
+                        />
+                        <span className="min-w-0 flex-1 truncate">
+                          {agentDisplayName(agent)}
+                          {agent.id === dispatcher?.id ? (
+                            <span className="ml-2 shrink-0 rounded bg-info-subtle px-1.5 py-0.5 text-ui-xs font-medium text-info">
+                              {intl.formatMessage({ id: "paperclip.form.dispatcherBadge" })}
                             </span>
                           ) : null}
                         </span>
+                        {agent.adapterType ? (
+                          <span className="shrink-0 font-mono text-ui-sm text-foreground-subtlest">
+                            {agent.adapterType}
+                          </span>
+                        ) : null}
                       </>
                     ),
                   }),
                 )}
+                {renderOption({
+                  key: "none",
+                  selected: state.assigneeAgentId === "",
+                  onSelect: () => selectAssignee(""),
+                  children: (
+                    <>
+                      <UserRound className="size-4 shrink-0 text-foreground-subtlest" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {intl.formatMessage({ id: "paperclip.form.assigneeAny" })}
+                      </span>
+                    </>
+                  ),
+                })}
+              </div>
+              {autoDispatch ? (
+                <Collapsible className="mt-1">
+                  <CollapsibleTrigger className="text-ui-sm text-foreground-subtle underline-offset-2 hover:text-foreground hover:underline">
+                    {intl.formatMessage({ id: "paperclip.form.viewDirective" })}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-surface-muted p-3 font-sans text-ui-sm text-foreground-subtle">
+                      {PAPERCLIP_DISPATCH_DIRECTIVE}
+                    </pre>
+                  </CollapsibleContent>
+                </Collapsible>
+              ) : null}
             </div>
-          </div>
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <Label>{intl.formatMessage({ id: "paperclip.form.workspace" })}</Label>
+              <div
+                role="radiogroup"
+                aria-label={intl.formatMessage({ id: "paperclip.form.workspace" })}
+                className="max-h-56 overflow-y-auto rounded-xl border border-border-subtle"
+              >
+                {renderOption({
+                  key: "workspace-none",
+                  selected: state.projectId === "",
+                  onSelect: () => onStateChange({ ...state, projectId: "" }),
+                  children: (
+                    <>
+                      <FolderOpen className="size-4 shrink-0 text-foreground-subtlest" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {intl.formatMessage({ id: "paperclip.form.workspaceNone" })}
+                      </span>
+                    </>
+                  ),
+                })}
+                {workspacePath
+                  ? renderOption({
+                      key: "workspace-current",
+                      selected:
+                        state.projectId === currentWorkspaceValue ||
+                        state.projectId === PAPERCLIP_CURRENT_WORKSPACE_PROJECT,
+                      onSelect: () => onStateChange({ ...state, projectId: currentWorkspaceValue }),
+                      children: (
+                        <>
+                          <FolderOpen className="size-4 shrink-0 text-info" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">
+                              {intl.formatMessage({ id: "paperclip.form.workspaceCurrent" })}
+                            </span>
+                            <span className="block break-all font-mono text-ui-xs leading-snug text-foreground-subtlest">
+                              {workspacePath}
+                            </span>
+                            {currentWorkspaceProjectId === null ? (
+                              <span className="mt-0.5 block text-ui-xs text-foreground-subtlest">
+                                {intl.formatMessage({ id: "paperclip.form.workspaceWillCreate" })}
+                              </span>
+                            ) : null}
+                          </span>
+                        </>
+                      ),
+                    })
+                  : null}
+                {projects
+                  .filter((project) => project.id !== currentWorkspaceProjectId)
+                  .map((project) =>
+                    renderOption({
+                      key: project.id,
+                      selected: state.projectId === project.id,
+                      onSelect: () => onStateChange({ ...state, projectId: project.id }),
+                      children: (
+                        <>
+                          <FolderOpen className="size-4 shrink-0 text-foreground-subtlest" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate">{project.name}</span>
+                            {project.codebase?.localFolder ? (
+                              <span className="block truncate font-mono text-ui-sm text-foreground-subtlest">
+                                {project.codebase.localFolder}
+                              </span>
+                            ) : null}
+                          </span>
+                        </>
+                      ),
+                    }),
+                  )}
+              </div>
+            </div>
           </div>
         </div>
         <DialogFooter className="shrink-0 gap-3 border-t border-border-subtle px-5 py-3 sm:items-center sm:justify-between">
@@ -418,7 +427,11 @@ export function PaperclipCreateTaskDialog({
               {intl.formatMessage({ id: "common.cancel" })}
             </Button>
             <Button disabled={!canSubmit} onClick={onSubmit}>
-              {submitting ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+              {submitting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
               {intl.formatMessage({ id: "paperclip.form.submit" })}
             </Button>
           </div>

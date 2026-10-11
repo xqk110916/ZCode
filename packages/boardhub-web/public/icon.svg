@@ -1,0 +1,59 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1D1E24"/>
+      <stop offset="1" stop-color="#0A0B0E"/>
+    </linearGradient>
+    <linearGradient id="bar1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2DD4BF"/>
+      <stop offset="1" stop-color="#14B8A6" stop-opacity="0.75"/>
+    </linearGradient>
+    <linearGradient id="bar2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#0EA5E9" stop-opacity="0.75"/>
+    </linearGradient>
+    <linearGradient id="bar3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#818CF8"/>
+      <stop offset="1" stop-color="#6366F1" stop-opacity="0.78"/>
+    </linearGradient>
+    <linearGradient id="trend" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5EEAD4"/>
+      <stop offset="0.5" stop-color="#7DD3FC"/>
+      <stop offset="1" stop-color="#C7D2FE"/>
+    </linearGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="14" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- squircle 底 + 内高光描边 -->
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+  <rect x="16" y="16" width="992" height="992" rx="216" fill="none" stroke="#FFFFFF" stroke-opacity="0.05" stroke-width="4"/>
+
+  <!-- 背景回形针（Paperclip 意象；顺时针倾斜呼应上升趋势，避开柱区） -->
+  <g transform="translate(76 556) rotate(16) scale(0.84)" fill="none" stroke="#5EEAD4" stroke-opacity="0.09" stroke-width="24" stroke-linecap="round">
+    <path d="M60 150 L160 50 A42 42 0 0 1 220 110 L92 238 A70 70 0 0 1 0 146 L148 0"/>
+  </g>
+
+  <!-- 三根斜切柱（ZCode 斜切语言；左低右高，底部保持可读亮度） -->
+  <g>
+    <path d="M275 560 L419 560 L419 748 L319 748 Z" fill="url(#bar1)"/>
+    <path d="M449 430 L593 430 L593 748 L493 748 Z" fill="url(#bar2)"/>
+    <path d="M623 288 L767 288 L767 748 L667 748 Z" fill="url(#bar3)"/>
+  </g>
+
+  <!-- 基线（与柱区对齐） -->
+  <line x1="232" y1="748" x2="810" y2="748" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- 趋势线：数据点统一坐在柱顶中心线上 -->
+  <g filter="url(#glow)">
+    <polyline points="347 560 521 430 695 288" fill="none" stroke="url(#trend)" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="347" cy="560" r="15" fill="#5EEAD4"/>
+    <circle cx="521" cy="430" r="15" fill="#7DD3FC"/>
+    <circle cx="695" cy="288" r="23" fill="#C7D2FE"/>
+  </g>
+</svg>

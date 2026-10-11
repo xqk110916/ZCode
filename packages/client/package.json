@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./web-platform": "./src/webPlatform.ts",
     "./globals": "./src/globals.d.ts"
   },
   "scripts": {

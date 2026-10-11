@@ -6,10 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { CircleCheck, CircleDashed, Loader2, Play, Square } from "lucide-react";
-import {
-  DEFAULT_PAPERCLIP_SERVER_URL,
-  type PaperclipLocalServerStatus,
-} from "@zcode/shared";
+import { DEFAULT_PAPERCLIP_SERVER_URL, type PaperclipLocalServerStatus } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import { Label } from "@/components/ui/label.js";
@@ -26,10 +23,12 @@ type TestState =
   | { kind: "ok"; version?: string }
   | { kind: "failed"; error: string };
 
-export function PaperclipSettingsSection() {
+export function PaperclipSettingsSection(props: { showAutoClaim?: boolean } = {}) {
   const { intl } = useZCodeIntl();
   const services = useServices();
   const { settings, update } = useSettings();
+  // BoardHub 独立应用无 ZCode 执行回调，自动认领永不生效，隐藏该开关避免误导。
+  const showAutoClaim = props.showAutoClaim !== false;
   const [serverUrl, setServerUrl] = useState("");
   const [token, setToken] = useState("");
   const [tokenLoaded, setTokenLoaded] = useState(false);
@@ -188,7 +187,10 @@ export function PaperclipSettingsSection() {
                 { version: testState.version ?? "-" },
               )
             : testState.kind === "failed"
-              ? intl.formatMessage({ id: "settings.paperclip.testFailed" }, { error: testState.error })
+              ? intl.formatMessage(
+                  { id: "settings.paperclip.testFailed" },
+                  { error: testState.error },
+                )
               : intl.formatMessage({ id: "settings.paperclip.testing" })}
         </div>
       ) : null}
@@ -254,31 +256,31 @@ export function PaperclipSettingsSection() {
         )}
       </div>
       {/* 自动认领：新任务出现即认领并后台建任务；开关即时生效（无需保存按钮）。 */}
-      <div className="flex flex-col gap-1">
-        <label className="flex cursor-pointer items-center justify-between gap-3">
-          <span className="text-ui-base text-foreground">
-            {intl.formatMessage({ id: "settings.paperclip.autoClaim" })}
-          </span>
-          <Switch
-            checked={settings?.paperclipAutoClaim === true}
-            onCheckedChange={(checked) => {
-              void update({ paperclipAutoClaim: checked });
-            }}
-          />
-        </label>
-        <p className="text-ui-sm text-foreground-subtlest">
-          {intl.formatMessage({ id: "settings.paperclip.autoClaimHint" })}
-        </p>
-      </div>
+      {showAutoClaim ? (
+        <div className="flex flex-col gap-1">
+          <label className="flex cursor-pointer items-center justify-between gap-3">
+            <span className="text-ui-base text-foreground">
+              {intl.formatMessage({ id: "settings.paperclip.autoClaim" })}
+            </span>
+            <Switch
+              checked={settings?.paperclipAutoClaim === true}
+              onCheckedChange={(checked) => {
+                void update({ paperclipAutoClaim: checked });
+              }}
+            />
+          </label>
+          <p className="text-ui-sm text-foreground-subtlest">
+            {intl.formatMessage({ id: "settings.paperclip.autoClaimHint" })}
+          </p>
+        </div>
+      ) : null}
       <SettingsFormActions>
         <Button
           variant="outline"
           disabled={testState.kind === "testing" || !tokenLoaded}
           onClick={() => void handleTest()}
         >
-          {testState.kind === "testing" ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : null}
+          {testState.kind === "testing" ? <Loader2 className="size-4 animate-spin" /> : null}
           {intl.formatMessage({ id: "settings.paperclip.test" })}
         </Button>
         <Button disabled={saving || !tokenLoaded} onClick={() => void handleSave()}>

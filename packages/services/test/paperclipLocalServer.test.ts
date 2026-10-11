@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   createPaperclipLocalServerController,
@@ -9,9 +12,15 @@ const BASE_URL = "http://localhost:3100";
 
 interface Harness {
   deps: PaperclipLocalServerDeps;
-  spawns: Array<{ command: string; args: string[] }>;
+  spawns: Array<{
+    command: string;
+    args: string[];
+    options?: { detached?: boolean; stdio?: Array<"ignore" | number>; env?: NodeJS.ProcessEnv };
+  }>;
   execs: Array<{ command: string; args: string[] }>;
   setHealth: (ok: boolean) => void;
+  logFilePath: string;
+  cleanup: () => void;
 }
 
 function createHarness(
@@ -21,12 +30,15 @@ function createHarness(
   const spawns: Harness["spawns"] = [];
   const execs: Harness["execs"] = [];
   let healthy = false;
+  // 日志注入临时目录：launchServerProcess 会真实 openSync 日志文件。
+  const logDir = mkdtempSync(join(tmpdir(), "paperclip-local-server-"));
+  const logFilePath = join(logDir, "server-run.log");
   const deps: PaperclipLocalServerDeps = {
     resolveBaseUrl: async () => BASE_URL,
     platform,
     fetchImpl: (async () => ({ ok: healthy })) as unknown as typeof fetch,
-    spawnImpl: (command, args) => {
-      spawns.push({ command, args });
+    spawnImpl: (command, args, options) => {
+      spawns.push({ command, args, options });
       // 启动命令发出后，模拟 server 在下一次探测时变为健康。
       healthy = true;
     },
@@ -43,9 +55,17 @@ function createHarness(
     stopPollTimeoutMs: 30,
     resolveNpxImpl: () =>
       platform === "win32" ? "C:\\nvm4w\\nodejs\\npx.cmd" : "/opt/homebrew/bin/npx",
+    resolveLogFilePathImpl: () => logFilePath,
     ...overrides,
   };
-  return { deps, spawns, execs, setHealth: (ok) => (healthy = ok) };
+  return {
+    deps,
+    spawns,
+    execs,
+    setHealth: (ok) => (healthy = ok),
+    logFilePath,
+    cleanup: () => rmSync(logDir, { recursive: true, force: true }),
+  };
 }
 
 test("start 幂等：已健康时不发任何命令", async () => {
@@ -57,7 +77,7 @@ test("start 幂等：已健康时不发任何命令", async () => {
   assert.equal(h.spawns.length, 0);
 });
 
-test("win32 start：cmd.exe /c npx.cmd detached 启动（无 WSL）", async () => {
+test("win32 start：cmd.exe /c npx.cmd detached 启动（无 WSL），输出落日志文件", async () => {
   const h = createHarness("win32");
   const controller = createPaperclipLocalServerController(h.deps);
   const status = await controller.start();
@@ -72,21 +92,46 @@ test("win32 start：cmd.exe /c npx.cmd detached 启动（无 WSL）", async () =
     "paperclipai@latest",
     "run",
   ]);
+  // stdout/stderr 指向日志 fd：Windows 分支此前 stdio 全 ignore，启动失败零线索。
+  const stdio = h.spawns[0]!.options?.stdio;
+  assert.equal(typeof stdio?.[1], "number");
+  assert.equal(typeof stdio?.[2], "number");
+  assert.ok(statSync(h.logFilePath));
   // 幂等重入：已健康不再发射。
   assert.deepEqual(await controller.start(), { state: "running" });
   assert.equal(h.spawns.length, 1);
+  h.cleanup();
 });
 
-test("darwin start：bash setsid/nohup 调 npx run，路径被引用", async () => {
+test("darwin start：直接 detached spawn npx（不经 bash/setsid），输出落日志文件", async () => {
   const h = createHarness("darwin");
   const controller = createPaperclipLocalServerController(h.deps);
   const status = await controller.start();
   assert.equal(status.state, "running");
-  assert.equal(h.spawns[0]!.command, "/bin/bash");
-  const commandText = h.spawns[0]!.args[1]!;
-  assert.match(commandText, /paperclipai@latest run/);
-  assert.match(commandText, /'\/opt\/homebrew\/bin\/npx'/);
-  assert.match(commandText, /setsid nohup/);
+  assert.equal(h.spawns[0]!.command, "/opt/homebrew/bin/npx");
+  assert.deepEqual(h.spawns[0]!.args, ["-y", "paperclipai@latest", "run"]);
+  assert.equal(h.spawns[0]!.options?.detached, true);
+  // stdout/stderr 指向日志 fd（1/2 位必须是 fd 数字，stdin ignore）。
+  const stdio = h.spawns[0]!.options?.stdio;
+  assert.equal(stdio?.[0], "ignore");
+  assert.equal(typeof stdio?.[1], "number");
+  assert.equal(typeof stdio?.[2], "number");
+  // npx shebang 是 env node：PATH 必须前置 npx 同目录，防宿主 PATH 里的旧版 nvm node 抢跑。
+  const path = h.spawns[0]!.options?.env?.PATH ?? "";
+  assert.ok(path.startsWith("/opt/homebrew/bin:"));
+  // 日志文件已创建于注入路径。
+  assert.ok(statSync(h.logFilePath));
+  h.cleanup();
+});
+
+test("linux start：同样直接 detached spawn（Node detached 即 setsid(2)）", async () => {
+  const h = createHarness("linux");
+  const controller = createPaperclipLocalServerController(h.deps);
+  const status = await controller.start();
+  assert.equal(status.state, "running");
+  assert.equal(h.spawns[0]!.command, "/opt/homebrew/bin/npx");
+  assert.equal(h.spawns[0]!.options?.detached, true);
+  h.cleanup();
 });
 
 test("start：找不到 npx 时返回可操作 error", async () => {

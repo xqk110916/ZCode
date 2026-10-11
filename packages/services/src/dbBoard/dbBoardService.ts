@@ -27,6 +27,7 @@ import {
 import { createServiceLogger, type ServiceLogger } from "../logger/serviceLogger.js";
 import { getAppConfigDir } from "../paths.js";
 import { atomicWriteJson } from "../fs/atomicFileUtils.js";
+import { withFileLock } from "@zcode/shared/node";
 import type {
   DbBoardColumnMeta,
   DbBoardConnectionConfig,
@@ -89,10 +90,7 @@ import {
   wrapReadOnlySelect,
 } from "./dbBoardSql.js";
 import { DbBoardDashboardStore } from "./dbBoardDashboardStore.js";
-import {
-  buildDbBoardUsageSummary,
-  type DbBoardUsageSummary,
-} from "./dbBoardUsageSummary.js";
+import { buildDbBoardUsageSummary, type DbBoardUsageSummary } from "./dbBoardUsageSummary.js";
 import {
   normalizeWorkspaceKey,
   parseBindings,
@@ -300,17 +298,78 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
     }
   }
 
-  async function persistConfigFile(): Promise<void> {
-    await atomicWriteJson(configFilePath, {
-      version: 3,
-      connections,
-      ...(activeConnectionId ? { activeConnectionId } : {}),
-      // bindings 非空即严格模式；为空保持 legacy（旧客户端读到多余键按未知字段忽略）。
-      ...(Object.keys(bindings).length > 0 ? { bindings } : {}),
+  interface DbBoardConfigDoc {
+    connections: DbBoardConnectionEntry[];
+    activeConnectionId?: string;
+    bindings: Record<string, string>;
+  }
+
+  /**
+   * 跨进程安全的配置变更：共享文件锁内「读最新文件 → 应用定向变更 → 原子写回」。
+   * 不能用内存态全量覆盖——BoardHub 的 Web 版与桌面版共用同一配置文件，
+   * 基于陈旧内存态的全量写会抹掉另一实例新增的连接/绑定；定向 mutator 保证
+   * 只落本次操作的键。mutate 后内存变量从 doc 回同步，与文件保持一致。
+   */
+  async function mutateConfigFile(mutate: (doc: DbBoardConfigDoc) => void): Promise<void> {
+    await withFileLock(configFilePath, async () => {
+      let doc: DbBoardConfigDoc;
+      try {
+        const parsed = JSON.parse(await readFile(configFilePath, "utf-8")) as Record<
+          string,
+          unknown
+        >;
+        doc = Array.isArray(parsed.connections)
+          ? {
+              connections: parsed.connections.filter(
+                (entry): entry is DbBoardConnectionEntry =>
+                  Boolean(entry) &&
+                  typeof (entry as DbBoardConnectionEntry).id === "string" &&
+                  typeof (entry as DbBoardConnectionEntry).host === "string" &&
+                  typeof (entry as DbBoardConnectionEntry).database === "string" &&
+                  typeof (entry as DbBoardConnectionEntry).username === "string" &&
+                  typeof (entry as DbBoardConnectionEntry).port === "number",
+              ),
+              ...(typeof parsed.activeConnectionId === "string"
+                ? { activeConnectionId: parsed.activeConnectionId }
+                : {}),
+              bindings: parseBindings(parsed.bindings),
+            }
+          : // 旧单连接格式/字段缺失：以本进程内存态兜底（loadConfigFile 已完成迁移）。
+            {
+              connections: [...connections],
+              ...(activeConnectionId ? { activeConnectionId } : {}),
+              bindings: { ...bindings },
+            };
+      } catch {
+        // 文件不存在/损坏：以本进程内存态为基准重建。
+        doc = {
+          connections: [...connections],
+          ...(activeConnectionId ? { activeConnectionId } : {}),
+          bindings: { ...bindings },
+        };
+      }
+      mutate(doc);
+      connections = doc.connections;
+      activeConnectionId = doc.activeConnectionId ?? null;
+      bindings = doc.bindings;
+      // 外层 withFileLock 已持锁，atomicWriteJson 内建锁不可重入，显式关闭防自等死锁。
+      await atomicWriteJson(
+        configFilePath,
+        {
+          version: 3,
+          connections: doc.connections,
+          ...(doc.activeConnectionId ? { activeConnectionId: doc.activeConnectionId } : {}),
+          // bindings 非空即严格模式；为空保持 legacy（旧客户端读到多余键按未知字段忽略）。
+          ...(Object.keys(doc.bindings).length > 0 ? { bindings: doc.bindings } : {}),
+        },
+        { useFileLock: false },
+      );
     });
   }
 
-  async function loadPersistedUsageSummary(connectionId: string): Promise<DbBoardUsageSummary | null> {
+  async function loadPersistedUsageSummary(
+    connectionId: string,
+  ): Promise<DbBoardUsageSummary | null> {
     try {
       const parsed = JSON.parse(await readFile(usageFilePath, "utf-8")) as Record<string, unknown>;
       const entry = parsed[connectionId];
@@ -328,16 +387,26 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
     }
   }
 
-  async function persistUsageSummary(connectionId: string, summary: DbBoardUsageSummary): Promise<void> {
+  async function persistUsageSummary(
+    connectionId: string,
+    summary: DbBoardUsageSummary,
+  ): Promise<void> {
     try {
-      let map: Record<string, DbBoardUsageSummary> = {};
-      try {
-        map = JSON.parse(await readFile(usageFilePath, "utf-8")) as Record<string, DbBoardUsageSummary>;
-      } catch {
-        // 文件不存在/损坏时重建（其他连接的缓存可由重新生成恢复）。
-      }
-      map[connectionId] = summary;
-      await atomicWriteJson(usageFilePath, map);
+      // read-modify-write 需跨进程锁（BoardHub Web/桌面双实例共用该文件；凭据写入同模式）。
+      await withFileLock(usageFilePath, async () => {
+        let map: Record<string, DbBoardUsageSummary> = {};
+        try {
+          map = JSON.parse(await readFile(usageFilePath, "utf-8")) as Record<
+            string,
+            DbBoardUsageSummary
+          >;
+        } catch {
+          // 文件不存在/损坏时重建（其他连接的缓存可由重新生成恢复）。
+        }
+        map[connectionId] = summary;
+        // 外层 withFileLock 已持锁，内建锁不可重入，显式关闭。
+        await atomicWriteJson(usageFilePath, map, { useFileLock: false });
+      });
     } catch (error) {
       logger.warn(undefined, "数据库看板使用情况汇总持久化失败（不影响本次结果）", {
         errorMessage: error instanceof Error ? error.message : String(error),
@@ -365,10 +434,7 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
   function requireConnectionConfig(): DbBoardConnectionEntry {
     const active = activeConnection();
     if (!active) {
-      throw new DbBoardError(
-        "尚未配置数据库连接，请先在看板中保存连接配置。",
-        "not-connected",
-      );
+      throw new DbBoardError("尚未配置数据库连接，请先在看板中保存连接配置。", "not-connected");
     }
     return active;
   }
@@ -552,7 +618,10 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
       }
       set.add(row.column_name);
     }
-    const tables = new Map<string, { schema: string; name: string; columns: DbBoardColumnMeta[] }>();
+    const tables = new Map<
+      string,
+      { schema: string; name: string; columns: DbBoardColumnMeta[] }
+    >();
     for (const row of columnsResult.rows as Array<{
       table_schema: string;
       table_name: string;
@@ -721,10 +790,14 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
         activeConnectionId,
       });
       if (resolution.shouldActivateConnectionId) {
-        const bound = connections.find((item) => item.id === resolution.shouldActivateConnectionId);
-        if (bound) {
-          activeConnectionId = bound.id;
-          await persistConfigFile();
+        const targetId = resolution.shouldActivateConnectionId;
+        const previousActive = activeConnectionId;
+        await mutateConfigFile((doc) => {
+          if (doc.connections.some((item) => item.id === targetId)) {
+            doc.activeConnectionId = targetId;
+          }
+        });
+        if (activeConnectionId !== previousActive) {
           await closePool();
         }
       }
@@ -733,7 +806,9 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
           ? {}
           : {
               workspaceAccess: resolution.access,
-              ...(resolution.boundConnectionId ? { boundConnectionId: resolution.boundConnectionId } : {}),
+              ...(resolution.boundConnectionId
+                ? { boundConnectionId: resolution.boundConnectionId }
+                : {}),
             };
       const active = activeConnection();
       if (!active) {
@@ -791,29 +866,39 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
         throw new DbBoardError("workspaceKey 不能为空。", "request-failed");
       }
       const bindingKey = workspaceBindingKey(workspaceKey);
-      // 解绑按归一化匹配删除，兼容历史原样存储的键（含斜杠/大小写形态差异）。
-      for (const storedKey of Object.keys(bindings)) {
-        if (workspaceBindingKey(storedKey) === bindingKey) {
-          delete bindings[storedKey];
+      const previousActive = activeConnectionId;
+      await mutateConfigFile((doc) => {
+        // 解绑按归一化匹配删除，兼容历史原样存储的键（含斜杠/大小写形态差异）。
+        for (const storedKey of Object.keys(doc.bindings)) {
+          if (workspaceBindingKey(storedKey) === bindingKey) {
+            delete doc.bindings[storedKey];
+          }
         }
-      }
+        if (params.connectionId === null) {
+          return;
+        }
+        const target = doc.connections.find((item) => item.id === params.connectionId);
+        if (!target) {
+          throw new DbBoardError(
+            `连接 ${params.connectionId} 不存在，无法绑定。`,
+            "request-failed",
+          );
+        }
+        doc.bindings[bindingKey] = target.id;
+        // 绑定即激活：本工作区立即用上该连接（全局单激活，轻量版语义）。
+        doc.activeConnectionId = target.id;
+      });
       if (params.connectionId === null) {
-        await persistConfigFile();
         logger.info(undefined, "数据库看板工作区已解绑", { workspaceKey: bindingKey });
         return;
       }
-      const target = connections.find((item) => item.id === params.connectionId);
-      if (!target) {
-        throw new DbBoardError(`连接 ${params.connectionId} 不存在，无法绑定。`, "request-failed");
-      }
-      bindings[bindingKey] = target.id;
-      // 绑定即激活：本工作区立即用上该连接（全局单激活，轻量版语义）。
-      if (activeConnectionId !== target.id) {
-        activeConnectionId = target.id;
+      if (activeConnectionId !== previousActive) {
         await closePool();
       }
-      await persistConfigFile();
-      logger.info(undefined, "数据库看板工作区已绑定连接", { workspaceKey, connectionId: target.id });
+      logger.info(undefined, "数据库看板工作区已绑定连接", {
+        workspaceKey,
+        ...(params.connectionId ? { connectionId: params.connectionId } : {}),
+      });
     },
 
     async saveConnection(entry, password): Promise<void> {
@@ -832,9 +917,10 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
         ...(entry.name?.trim() ? { name: entry.name.trim() } : {}),
         ...(entry.env?.trim() ? { env: entry.env.trim() } : {}),
       };
-      connections = [...connections.filter((item) => item.id !== id), next];
-      activeConnectionId = id;
-      await persistConfigFile();
+      await mutateConfigFile((doc) => {
+        doc.connections = [...doc.connections.filter((item) => item.id !== id), next];
+        doc.activeConnectionId = id;
+      });
       if (typeof password === "string" && password.length > 0) {
         await options.credentialService.save(connectionCredentialKey(id), password);
         passwordCache.set(id, password);
@@ -854,12 +940,16 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
       if (!exists) {
         return;
       }
-      connections = connections.filter((item) => item.id !== id);
-      if (activeConnectionId === id) {
-        activeConnectionId = connections[0]?.id ?? null;
+      const wasActive = activeConnectionId === id;
+      await mutateConfigFile((doc) => {
+        doc.connections = doc.connections.filter((item) => item.id !== id);
+        if (doc.activeConnectionId === id) {
+          doc.activeConnectionId = doc.connections[0]?.id;
+        }
+      });
+      if (wasActive) {
         await closePool();
       }
-      await persistConfigFile();
       await options.credentialService.delete(connectionCredentialKey(id)).catch(() => {
         // 凭据删除失败不阻塞配置删除
       });
@@ -879,8 +969,11 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
       if (activeConnectionId === id) {
         return;
       }
-      activeConnectionId = id;
-      await persistConfigFile();
+      await mutateConfigFile((doc) => {
+        if (doc.connections.some((item) => item.id === id)) {
+          doc.activeConnectionId = id;
+        }
+      });
       await closePool();
       logger.info(undefined, "数据库看板激活连接已切换", { connectionId: id });
     },
@@ -1001,10 +1094,10 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
         frequentTableCount: usageSummaryCache.frequentTables.length,
       });
       return {
-          ...usageSummaryCache,
-          frequentTables: [...usageSummaryCache.frequentTables],
-          rowCounts: { ...usageSummaryCache.rowCounts },
-        };
+        ...usageSummaryCache,
+        frequentTables: [...usageSummaryCache.frequentTables],
+        rowCounts: { ...usageSummaryCache.rowCounts },
+      };
     },
 
     async getTableColumns(schema, table, workspaceKey): Promise<DbBoardColumnMeta[]> {
@@ -1070,7 +1163,10 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
       for (const name of requestedColumns) {
         const meta = getColumnMeta(entry.columns, name)!;
         if (isReadOnlyColumn(meta)) {
-          throw new DbBoardError(`列 ${name} 为二进制/数组类型，不能通过看板写入。`, "request-failed");
+          throw new DbBoardError(
+            `列 ${name} 为二进制/数组类型，不能通过看板写入。`,
+            "request-failed",
+          );
         }
       }
       const qualified = quoteQualifiedName(entry.schema, entry.name);
@@ -1109,7 +1205,10 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
       const pks = pkColumnsOf(entry);
       const pkNames = new Set(pks.map((column) => column.name));
       const pkInputNames = Object.keys(params.pk);
-      if (pkInputNames.length !== pkNames.size || !pkInputNames.every((name) => pkNames.has(name))) {
+      if (
+        pkInputNames.length !== pkNames.size ||
+        !pkInputNames.every((name) => pkNames.has(name))
+      ) {
         throw new DbBoardError("主键列不完整或包含非主键列。", "request-failed");
       }
       const setColumnNames = Object.keys(params.values).filter((name) => !pkNames.has(name));
@@ -1120,7 +1219,10 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
       for (const name of setColumnNames) {
         const meta = getColumnMeta(entry.columns, name)!;
         if (isReadOnlyColumn(meta)) {
-          throw new DbBoardError(`列 ${name} 为二进制/数组类型，不能通过看板写入。`, "request-failed");
+          throw new DbBoardError(
+            `列 ${name} 为二进制/数组类型，不能通过看板写入。`,
+            "request-failed",
+          );
         }
       }
       const qualified = quoteQualifiedName(entry.schema, entry.name);
@@ -1264,11 +1366,7 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
         if (Number((newerResult.rows[0] as { total: string }).total) > 0) {
           throw new DbBoardError("该行存在更晚的未回退操作，请先回退更新的日志。", "conflict");
         }
-        const entry = requireTableEntry(
-          await loadCatalog(),
-          logRow.schema_name,
-          logRow.table_name,
-        );
+        const entry = requireTableEntry(await loadCatalog(), logRow.schema_name, logRow.table_name);
         const pks = pkColumnsOf(entry);
         const qualified = quoteQualifiedName(entry.schema, entry.name);
         const pkObject = safeParseJson<Record<string, unknown>>(logRow.pk_json, {});
@@ -1318,7 +1416,10 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
           // 补偿 insert 的回退：行必须已不存在（被回退删除）；存在说明已被外部重建，报冲突。
           const existing = await client.query(selectSql, pkValues);
           if (existing.rows.length > 0) {
-            throw new DbBoardError("目标行已存在（可能被外部重建），无法执行恢复插入。", "conflict");
+            throw new DbBoardError(
+              "目标行已存在（可能被外部重建），无法执行恢复插入。",
+              "conflict",
+            );
           }
           const insertColumns = entry.columns
             .filter((column) => Object.prototype.hasOwnProperty.call(afterObject, column.name))
@@ -1514,7 +1615,12 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
         question: params.question,
       });
       const explanation = (
-        await completeText(prompt, DB_BOARD_EXPLAIN_QUERY_SOURCE, selection, EXPLAIN_MAX_OUTPUT_TOKENS)
+        await completeText(
+          prompt,
+          DB_BOARD_EXPLAIN_QUERY_SOURCE,
+          selection,
+          EXPLAIN_MAX_OUTPUT_TOKENS,
+        )
       ).trim();
       if (!explanation) {
         throw new DbBoardError("模型没有返回解释内容。", "invalid-output");
@@ -1541,16 +1647,12 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
     },
   };
 
-  async function resolveCurrentModel(): Promise<
-    ZCodeWorkspaceGenerateTextParams["selection"]
-  > {
+  async function resolveCurrentModel(): Promise<ZCodeWorkspaceGenerateTextParams["selection"]> {
     const current = await options.readCurrentModel();
     const providerId = current?.providerId?.trim();
     const modelId = current?.modelId?.trim();
     if (!providerId || !modelId) {
-      throw new DbBoardError(
-        "未读取到当前模型，请先在模型选择中配置模型。", "model-unavailable",
-      );
+      throw new DbBoardError("未读取到当前模型，请先在模型选择中配置模型。", "model-unavailable");
     }
     return current!;
   }
@@ -1595,10 +1697,7 @@ export function createDbBoardService(options: DbBoardServiceOptions): IDbBoardSe
     } catch (error) {
       if (error instanceof DbBoardError) throw error;
       const message = error instanceof Error ? error.message : String(error);
-      if (
-        budget > FALLBACK_MAX_OUTPUT_TOKENS &&
-        message.includes(MAX_OUTPUT_TOKENS_RANGE_ERROR)
-      ) {
+      if (budget > FALLBACK_MAX_OUTPUT_TOKENS && message.includes(MAX_OUTPUT_TOKENS_RANGE_ERROR)) {
         const result = await options.generateText({
           prompt,
           querySource,
@@ -1660,10 +1759,7 @@ function deepEquals(a: unknown, b: unknown): boolean {
     const bKeys = Object.keys(b as Record<string, unknown>);
     if (aKeys.length !== bKeys.length) return false;
     return aKeys.every((key) =>
-      deepEquals(
-        (a as Record<string, unknown>)[key],
-        (b as Record<string, unknown>)[key],
-      ),
+      deepEquals((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]),
     );
   }
   return false;

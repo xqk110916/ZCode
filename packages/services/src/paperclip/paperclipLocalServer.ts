@@ -1,11 +1,8 @@
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import type {
-  PaperclipLocalServerState,
-  PaperclipLocalServerStatus,
-} from "@zcode/shared";
+import { delimiter, dirname, join } from "node:path";
+import type { PaperclipLocalServerState, PaperclipLocalServerStatus } from "@zcode/shared";
 
 /**
  * Paperclip 本地 server 生命周期控制器（specs/services/paperclip-integration.md）。
@@ -15,11 +12,14 @@ import type {
  * 因此宿主退出不影响 server，多窗口并发由"启动前先探 health"守卫幂等。
  *
  * 平台默认策略（全平台原生运行，数据库一律外置 PostgreSQL，由系统服务承载）：
- * - darwin/linux：`npx -y paperclipai@latest run`（setsid/nohup 守护）。
- * - win32：`npx.cmd -y paperclipai@latest run`（detached + windowsHide；连接串等配置
- *   由实例 config（~/.paperclip/instances/default/config.json）自带，无需命令行注入）。
+ * - darwin/linux：直接 detached spawn `npx -y paperclipai@latest run`（Node 的 detached
+ *   在 POSIX 上即 setsid(2) 系统调用，不依赖 shell 与 setsid 命令）。
+ * - win32：`npx.cmd -y paperclipai@latest run`（.cmd 不能被 detached spawn 直接执行，
+ *   经 cmd.exe /c 包裹；连接串等配置由实例 config 自带，无需命令行注入）。
  *   Windows 内置 Administrator 账户的全权令牌使内嵌 PostgreSQL 无法原生运行，
  *   外置 PG 服务是 Windows 上的唯一支持形态。
+ * - 全平台 stdout/stderr 统一落 ~/.paperclip/server-run.log（打包形态无终端，
+ *   启动失败时日志是唯一排查渠道）。
  * - GUI/服务进程 PATH 常不含 nvm：npx 解析显式搜索 nvm/Homebrew/nvm4w 常见位置。
  * - 停止：按进程命令行模式匹配终止（powershell Get-CimInstance / pkill，字符类
  *   技巧避免自匹配）；外置 PostgreSQL 服务不随 server 停止（系统服务语义）。
@@ -54,12 +54,21 @@ export interface PaperclipLocalServerDeps {
   spawnImpl?: (
     command: string,
     args: string[],
-    options: { detached: boolean; cwd?: string },
+    options: {
+      detached: boolean;
+      cwd?: string;
+      /** 子进程 stdio；启动路径传日志 fd 数组，缺省 ignore。 */
+      stdio?: Array<"ignore" | number>;
+      /** 子进程环境；启动路径前置 npx 同目录保证 node 版本配套。 */
+      env?: NodeJS.ProcessEnv;
+    },
   ) => void;
   /** 测试注入：默认 setTimeout。 */
   delayImpl?: (ms: number) => Promise<void>;
   /** 测试注入：默认真实文件系统（解析 npx 用）。 */
   resolveNpxImpl?: () => string | null;
+  /** 测试注入：启动日志文件路径。 */
+  resolveLogFilePathImpl?: () => string;
   /** 测试注入：启停健康轮询的间隔与上限。 */
   startPollIntervalMs?: number;
   startPollTimeoutMs?: number;
@@ -90,11 +99,12 @@ export function createPaperclipLocalServerController(
   const spawnImpl =
     deps.spawnImpl ??
     ((command, args, options) => {
-      // detached + ignore + unref：server 与宿主生命周期解耦，命令自身负责守护。
+      // detached + unref：server 与宿主生命周期解耦。POSIX 上 Node 的 detached
+      // 即 setsid(2) 系统调用（不依赖 setsid 命令），命令自身无需再守护。
       const child = spawn(command, args, {
         ...options,
         detached: true,
-        stdio: "ignore",
+        stdio: options.stdio ?? "ignore",
         windowsHide: true,
       });
       child.unref();
@@ -139,10 +149,47 @@ export function createPaperclipLocalServerController(
     }
   }
 
+  function resolveLogFilePath(): string {
+    return deps.resolveLogFilePathImpl?.() ?? join(homedir(), ".paperclip", "server-run.log");
+  }
+
   function startCommandTimeoutHint(): string {
     return platform === "win32"
-      ? "C:\\Users\\<you>\\.paperclip\\run-win.log"
+      ? "%USERPROFILE%\\.paperclip\\server-run.log"
       : "~/.paperclip/server-run.log";
+  }
+
+  /** 发射 server 进程：全平台 stdout/stderr 落日志文件（fd 由子进程继承后父侧关闭）。 */
+  function launchServerProcess(npx: string): void {
+    const logFile = resolveLogFilePath();
+    mkdirSync(dirname(logFile), { recursive: true });
+    const logFd = openSync(logFile, "a");
+    // npx 的 shebang 是 `#!/usr/bin/env node`：宿主 PATH 里 nvm 等旧版本 node 排前时，
+    // npx 会跑在旧 node 上（paperclipai 要求 ≥24.11，本机 nvm 24.7 会被 doctor 拒绝）。
+    // npx 与配套 node 同目录，把该目录前置到 PATH 保证版本配套。
+    const npxDir = dirname(npx);
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      PATH: process.env.PATH ? `${npxDir}${delimiter}${process.env.PATH}` : npxDir,
+    };
+    try {
+      const stdio: Array<"ignore" | number> = ["ignore", logFd, logFd];
+      if (platform === "win32") {
+        // .cmd 不能被 detached spawn 直接执行（Node 报 EINVAL），经 cmd.exe /c 包裹；
+        // 进程树随 detached 独立，宿主退出不影响 server。
+        spawnImpl("cmd.exe", ["/c", npx, "-y", "paperclipai@latest", "run"], {
+          detached: true,
+          stdio,
+          env,
+        });
+      } else {
+        // POSIX：直接 detached spawn（Node 的 detached 即 setsid(2)，无需 bash/setsid 命令）。
+        spawnImpl(npx, ["-y", "paperclipai@latest", "run"], { detached: true, stdio, env });
+      }
+    } finally {
+      // 子进程已继承 fd，父侧副本即可关闭；写入失败不阻断启动（探测兜底）。
+      closeSync(logFd);
+    }
   }
 
   async function runStart(): Promise<PaperclipLocalServerStatus> {
@@ -159,15 +206,7 @@ export function createPaperclipLocalServerController(
       };
     }
     try {
-      if (platform === "win32") {
-        // .cmd 不能被 detached spawn 直接执行（Node 报 EINVAL），经 cmd.exe /c 包裹；
-        // 进程树随 detached 独立，宿主退出不影响 server。
-        spawnImpl("cmd.exe", ["/c", npx, "-y", "paperclipai@latest", "run"], {
-          detached: true,
-        });
-      } else {
-        spawnImpl("/bin/bash", ["-c", posixStartCommand(npx)], { detached: true });
-      }
+      launchServerProcess(npx);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       return { state: "error", detail };
@@ -253,16 +292,6 @@ export function createPaperclipLocalServerController(
       // 原生形态下宿主不持有子进程句柄，无需清理。
     },
   };
-}
-
-/** POSIX 启动命令：setsid/nohup 守护 + 日志重定向。 */
-function posixStartCommand(npx: string): string {
-  return `setsid nohup ${shellQuote(npx)} -y paperclipai@latest run >> ~/.paperclip/server-run.log 2>&1 &`;
-}
-
-/** POSIX 单引号包裹（路径含空格时 bash -c 仍安全）。 */
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/gu, `'\\''`)}'`;
 }
 
 /** 解析 npx 实际路径：GUI/服务进程 PATH 常不含 nvm 与用户级安装位置。 */

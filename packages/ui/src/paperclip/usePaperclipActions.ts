@@ -23,8 +23,14 @@ export function usePaperclipActions(input: {
   setProjects: (update: (current: PaperclipProject[]) => PaperclipProject[]) => void;
   loadIssueThread: (issueId: string) => Promise<void>;
 }) {
-  const { paperclipService, mergeIssueEvent, setActionError, setAgents, setProjects, loadIssueThread } =
-    input;
+  const {
+    paperclipService,
+    mergeIssueEvent,
+    setActionError,
+    setAgents,
+    setProjects,
+    loadIssueThread,
+  } = input;
 
   const createIssue = useCallback(
     async (createInput: PaperclipCreateIssueInput) => {

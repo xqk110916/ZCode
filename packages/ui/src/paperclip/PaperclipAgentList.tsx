@@ -32,7 +32,9 @@ export function PaperclipAgentList({
       <div className="flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-ui-base font-semibold text-foreground">
           {intl.formatMessage({ id: "paperclip.agents.title" })}
-          <span className="font-mono text-ui-sm font-normal text-foreground-subtlest">{agents.length}</span>
+          <span className="font-mono text-ui-sm font-normal text-foreground-subtlest">
+            {agents.length}
+          </span>
         </h2>
         <Button variant="outline" size="sm" className="text-ui-sm" onClick={onAdd}>
           <UserRoundPlus className="size-4" />
@@ -43,7 +45,10 @@ export function PaperclipAgentList({
         loading ? (
           <div className="flex gap-2 lg:flex-col" aria-busy>
             {Array.from({ length: 3 }, (_, index) => (
-              <div key={index} className="h-16 w-72 shrink-0 animate-pulse rounded-xl bg-surface-muted lg:w-auto" />
+              <div
+                key={index}
+                className="h-16 w-72 shrink-0 animate-pulse rounded-xl bg-surface-muted lg:w-auto"
+              />
             ))}
           </div>
         ) : (

@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 对话框/任务详情是表单与多场景堆叠的天然长组件，拆分会切断选项渲染与提交编排的内聚；先收口单文件，与 Root.tsx 同例。 */
 /**
  * 任务展开区：等人处理的交互、审查交接、回复、心跳历史、评论。
  */
@@ -24,7 +25,9 @@ function commentAuthor(
 ): string {
   if (comment.authorName) return comment.authorName;
   if (comment.authorAgentId) {
-    return findAgentName(agents, comment.authorAgentId) ?? fallback("paperclip.progress.authorAgent");
+    return (
+      findAgentName(agents, comment.authorAgentId) ?? fallback("paperclip.progress.authorAgent")
+    );
   }
   if (comment.authorKind === "user") return fallback("paperclip.progress.authorUser");
   if (comment.authorKind === "system") return fallback("paperclip.progress.authorSystem");
@@ -59,7 +62,11 @@ function interactionMessage(kind: string): string {
   return "paperclip.interaction.confirm";
 }
 
-function toggleSelection(current: readonly string[], id: string, mode: "single" | "multi"): string[] {
+function toggleSelection(
+  current: readonly string[],
+  id: string,
+  mode: "single" | "multi",
+): string[] {
   if (mode === "single") return [id];
   return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
 }
@@ -215,7 +222,10 @@ export function PaperclipIssueDetail({
             return selectedFor(`${interaction.id}:${question.id}`).length > 0;
           });
         return (
-          <div key={interaction.id} className="flex flex-col gap-2 rounded-lg bg-warning-subtle px-3 py-2">
+          <div
+            key={interaction.id}
+            className="flex flex-col gap-2 rounded-lg bg-warning-subtle px-3 py-2"
+          >
             <p className="text-ui-sm font-medium text-foreground">
               {interaction.title ?? label(interactionMessage(interaction.kind))}
             </p>
@@ -271,7 +281,9 @@ export function PaperclipIssueDetail({
                   onClick={() => {
                     const selected = selectedFor(optionKey);
                     setSending(true);
-                    void onAcceptInteraction(interaction.id, selected).finally(() => setSending(false));
+                    void onAcceptInteraction(interaction.id, selected).finally(() =>
+                      setSending(false),
+                    );
                   }}
                 >
                   {label("paperclip.interaction.accept")}
@@ -363,12 +375,16 @@ export function PaperclipIssueDetail({
           {label("paperclip.progress.history")}
         </p>
         {runs.length === 0 ? (
-          <p className="text-ui-sm text-foreground-subtle">{label("paperclip.progress.noHistory")}</p>
+          <p className="text-ui-sm text-foreground-subtle">
+            {label("paperclip.progress.noHistory")}
+          </p>
         ) : (
           <ol className="flex max-h-48 flex-col gap-2 overflow-y-auto">
             {runs.map((run) => {
               const statusId = runStatusMessage(run.status);
-              const failed = ["failed", "timed_out", "interrupted", "error"].includes(run.status.toLowerCase());
+              const failed = ["failed", "timed_out", "interrupted", "error"].includes(
+                run.status.toLowerCase(),
+              );
               return (
                 <li key={run.id} className="rounded-lg bg-surface-muted px-3 py-2">
                   <div className="flex items-center justify-between gap-2 text-ui-xs text-foreground-subtlest">
@@ -380,7 +396,9 @@ export function PaperclipIssueDetail({
                     </span>
                   </div>
                   {run.error ? (
-                    <p className="mt-1 whitespace-pre-wrap break-words text-ui-sm text-danger">{run.error}</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-ui-sm text-danger">
+                      {run.error}
+                    </p>
                   ) : run.detail ? (
                     <p className="mt-1 whitespace-pre-wrap break-words text-ui-sm text-foreground-subtle">
                       {run.detail}
@@ -398,7 +416,9 @@ export function PaperclipIssueDetail({
           {label("paperclip.progress.comments")}
         </p>
         {comments.length === 0 ? (
-          <p className="text-ui-sm text-foreground-subtle">{label("paperclip.progress.noActivity")}</p>
+          <p className="text-ui-sm text-foreground-subtle">
+            {label("paperclip.progress.noActivity")}
+          </p>
         ) : (
           <ol className="flex max-h-64 flex-col gap-2 overflow-y-auto">
             {comments.map((comment) => (

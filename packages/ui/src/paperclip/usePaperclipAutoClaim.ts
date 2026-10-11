@@ -21,7 +21,7 @@ export function usePaperclipAutoClaim(input: {
     issue: PaperclipIssue,
     onClaimed: (issue: PaperclipIssue) => void,
   ) => Promise<boolean>;
-  onAutoExecute: (issue: PaperclipIssue, targetWorkspacePath: string | null) => void;
+  onAutoExecute?: (issue: PaperclipIssue, targetWorkspacePath: string | null) => void;
 }): { pendingCount: number } {
   const { enabled, issues, zcodeAgent, projects, executeInZCode, onAutoExecute } = input;
   const { intl } = useZCodeIntl();
@@ -50,7 +50,8 @@ export function usePaperclipAutoClaim(input: {
   );
 
   useEffect(() => {
-    if (!enabled || zcodeAgent === null) return;
+    // 无执行落地回调（如 BoardHub 独立应用）时整个自动认领不启用。
+    if (!enabled || !onAutoExecute || zcodeAgent === null) return;
     const pending = issues.filter(
       (issue) =>
         issue.assigneeAgentId === zcodeAgent.id &&
@@ -60,13 +61,9 @@ export function usePaperclipAutoClaim(input: {
     if (pending.length === 0) return;
     for (const issue of pending) {
       claimedRef.current.add(issue.id);
-      sessionStorage.setItem(
-        AUTO_CLAIMED_STORAGE_KEY,
-        JSON.stringify([...claimedRef.current]),
-      );
+      sessionStorage.setItem(AUTO_CLAIMED_STORAGE_KEY, JSON.stringify([...claimedRef.current]));
       const targetWorkspacePath =
-        projects.find((project) => project.id === issue.projectId)?.codebase?.localFolder ??
-        null;
+        projects.find((project) => project.id === issue.projectId)?.codebase?.localFolder ?? null;
       void executeInZCode(issue, (claimed) => {
         onAutoExecute(claimed, targetWorkspacePath);
         toast(
