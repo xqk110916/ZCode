@@ -377,4 +377,10 @@ export interface AppSettings {
    * 自动认领并在对应工作区后台创建预填任务（不切换视图）。
    */
   paperclipAutoClaim?: boolean;
+  /**
+   * BoardHub 独立应用的模型端点（OpenAI 兼容 base URL）与模型 id；
+   * 为空时 BoardHub 的看板生成/知识蒸馏报模型不可用。见 specs/boardhub/standalone-app.md。
+   */
+  boardhubModelBaseUrl?: string;
+  boardhubModelId?: string;
 }

@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "lib": ["es2025", "dom", "dom.iterable"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "paths": {
+      "@/*": ["../ui/src/*"]
+    }
+  },
+  "include": ["src"],
+  "references": [{ "path": "../ui" }, { "path": "../client" }]
+}

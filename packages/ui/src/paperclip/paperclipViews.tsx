@@ -53,7 +53,9 @@ export function PaperclipAdapterBrandIcon({
     return <Bot className={className} />;
   }
   // rounded-sm 让 claude/chatgpt 这类满幅方形 app 图标与容器圆角协调；透明图标不受影响。
-  return <img src={src} alt="" aria-hidden className={cn("rounded-sm", className)} draggable={false} />;
+  return (
+    <img src={src} alt="" aria-hidden className={cn("rounded-sm", className)} draggable={false} />
+  );
 }
 
 /** adapter 展示名：local 形态去掉 _local 后缀（claude_local → claude）；其他形态保留全名以区分执行位置。 */
@@ -143,9 +145,7 @@ function PaperclipAgentStatusBadge({
   return (
     <Badge variant="secondary" className={cn("gap-1.5 text-ui-sm", presentation.className)}>
       <span className="size-1.5 shrink-0 rounded-full bg-current" />
-      {presentation.labelKey
-        ? intl.formatMessage({ id: presentation.labelKey })
-        : (status ?? "")}
+      {presentation.labelKey ? intl.formatMessage({ id: presentation.labelKey }) : (status ?? "")}
     </Badge>
   );
 }
@@ -188,10 +188,7 @@ export function PaperclipAgentCard({
     >
       <div className="flex items-center gap-2">
         <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-accent">
-          <PaperclipAdapterBrandIcon
-            adapterType={adapterType}
-            className="size-4 object-contain"
-          />
+          <PaperclipAdapterBrandIcon adapterType={adapterType} className="size-4 object-contain" />
         </span>
         <span className="truncate text-ui-base font-medium text-foreground">
           {agentDisplayName(agent)}
@@ -253,17 +250,17 @@ export function PaperclipAgentCard({
       </div>
       <div className="flex flex-wrap gap-1">
         {isDispatcher ? (
-          <Badge
-            variant="secondary"
-            className="gap-1 bg-info-subtle text-info text-ui-sm"
-          >
+          <Badge variant="secondary" className="gap-1 bg-info-subtle text-info text-ui-sm">
             <Sparkles className="size-3" />
             {intl.formatMessage({ id: "paperclip.agents.dispatcher" })}
           </Badge>
         ) : null}
         {adapterType ? (
           <Badge variant="secondary" className="gap-1 text-ui-sm">
-            <PaperclipAdapterBrandIcon adapterType={adapterType} className="size-3 object-contain" />
+            <PaperclipAdapterBrandIcon
+              adapterType={adapterType}
+              className="size-3 object-contain"
+            />
             {formatAdapterLabel(adapterType)}
           </Badge>
         ) : null}
@@ -273,10 +270,7 @@ export function PaperclipAgentCard({
           </Badge>
         ) : null}
         {agent.status ? (
-          <PaperclipAgentStatusBadge
-            status={agent.status}
-            adapterType={agent.adapterType || ""}
-          />
+          <PaperclipAgentStatusBadge status={agent.status} adapterType={agent.adapterType || ""} />
         ) : null}
       </div>
       {queueCount !== undefined ? (

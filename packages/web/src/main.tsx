@@ -11,6 +11,7 @@ import {
 } from "@zcode/ui";
 import "@zcode/ui/styles.css";
 import { connectViaWebSocket } from "@zcode/client";
+import { createNoopWebPlatform } from "@zcode/client/web-platform";
 import { WebCallbackPage } from "./auth/WebCallbackPage.js";
 import { createWebAuthService } from "./auth/webAuthService.js";
 import { WEB_ZAI_OAUTH_CONFIG, resolveWebAuthDevReturnTo } from "./auth/webZaiOAuthConfig.js";
@@ -187,52 +188,18 @@ async function renderConversationSharePage(): Promise<void> {
   );
 }
 
+// no-op 基座来自 @zcode/client（与 BoardHub 独立应用共享）；Web 端只覆盖产品化方法。
 function createWebPlatform(): IPlatformService {
   return {
-    canSelectFilePath: false,
-    // Web 端无法打开系统目录选择框
-    selectDirectory: () => Promise.resolve(null),
-    // Web 端无法打开系统文件选择框
-    selectFile: () => Promise.resolve(null),
-    selectFiles: () => Promise.resolve([]),
-    getPathForFile: () => null,
-    createTempTextAttachment: () =>
-      Promise.reject(new Error("Temporary text attachments require a desktop host")),
-    onRemoteConnectionLog: () => () => {},
-    onRemoteSessionClosed: () => () => {},
-    onBotRemoteWorkspaceReconnected: () => () => {},
-    // Web 端无多窗口管理
-    activateOrSetWorkspace: () => Promise.resolve({ activated: false }),
-    // TODO(web-remote-workspace): 普通 Web 模式先只保证 server 本地工作区可用。
-    // 远程 WebSocket 只暴露部分 service，与 Root/RemoteServiceAccess 需要的完整
-    // accessor 不匹配，直接打开 ?remote=<id> 会在项目向导或首屏卡住。
+    ...createNoopWebPlatform(),
     connectRemote(options: RemoteTarget) {
+      // TODO(web-remote-workspace): 普通 Web 模式先只保证 server 本地工作区可用。
+      // 远程 WebSocket 只暴露部分 service，与 Root/RemoteServiceAccess 需要的完整
+      // accessor 不匹配，直接打开 ?remote=<id> 会在项目向导或首屏卡住。
       return Promise.resolve({
         success: false,
         error: `Remote connect is not supported in Web mode yet: ${options.kind}`,
       });
-    },
-    cancelPendingRemoteConnection: (_requestId?: string) => Promise.resolve(),
-    disposeRemoteSession: () => Promise.resolve(),
-    isDockerAvailable: () => Promise.resolve(false),
-    listWSLDistros: () => Promise.resolve([]),
-    listDockerContainers: () => Promise.resolve([]),
-    listSSHConfigAliases: () => Promise.resolve([]),
-    loadMcpFromUserDirectory: () => Promise.resolve({ servers: [] }),
-    saveMcpToUserDirectory: () =>
-      Promise.resolve({
-        success: false,
-        error: "MCP native directory management requires a desktop attachment",
-      }),
-    migrateLegacyCommonMcp: () =>
-      Promise.resolve({
-        servers: {},
-        totalCount: 0,
-        importedCount: 0,
-        skippedCount: 0,
-      }),
-    openExternal: (url) => {
-      window.open(url, "_blank", "noopener,noreferrer");
     },
     openFeedback: async () => {
       const feedbackUrl = await resolveFeedbackUrl();
@@ -253,16 +220,6 @@ function createWebPlatform(): IPlatformService {
       const communityUrl = await resolveWebCommunityUrl(locale);
       return typeof communityUrl === "string" && communityUrl.length > 0;
     },
-    openInFileManager: () =>
-      Promise.resolve({ success: false, error: "Not supported in web mode" }),
-    openExternalFile: () => Promise.resolve({ success: false, error: "Not supported in web mode" }),
-    registerOAuthState: (_payload) => {},
-    onOAuthCallback: () => () => {},
-    onPaymentCallback: () => () => {},
-    onShareImport: () => () => {},
-    notifyRendererReady: () => {},
-    reportTelemetryEvent: async () => {},
-    reportArmsCustomEvent: () => Promise.resolve(),
     showTaskNotification: (payload) => {
       if (document.hasFocus()) {
         return;
@@ -285,10 +242,6 @@ function createWebPlatform(): IPlatformService {
         // 浏览器通知不可用时静默忽略，避免打断主流程
       }
     },
-    // Web 端不需要跨窗口 tab 管理
-    syncWindowTabs: () => {},
-    // Web 端没有宿主层 Dock / 任务栏徽标，保持空实现以兼容统一平台接口
-    syncWindowUnreadCount: () => {},
     // Web 端没有宿主层焦点映射，改为上报给 zcode-server，供本机 /api/local-send
     // 解析默认目标会话；best-effort，失败不打扰主流程。
     syncActiveTaskSession: (sessionId) => {
@@ -297,65 +250,6 @@ function createWebPlatform(): IPlatformService {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId }),
       }).catch(() => {});
-    },
-    onFocusTab: () => () => {},
-    onNewTab: () => () => {},
-    onCloseActiveContextRequest: () => () => {},
-    onOpenBrowserUrl: () => () => {},
-    onNewTask: () => () => {},
-    onOpenWorkspace: () => () => {},
-    onWindowFullscreenChanged: () => () => {},
-    onTaskNotificationClick: () => () => {},
-    exportLogs: () => Promise.resolve({ success: false, error: "Not supported in web mode" }),
-    captureWindowScreenshot: () => Promise.resolve(null),
-    importChromeBrowserData: (_options) =>
-      Promise.resolve({
-        success: false,
-        cookies: { imported: 0, skipped: 0, failed: 0 },
-        localStorage: {
-          originsImported: 0,
-          entriesImported: 0,
-          originsSkipped: 0,
-          originsFailed: 0,
-        },
-        error: "chrome_import_not_supported" as const,
-      }),
-    clearEmbeddedBrowserData: () =>
-      Promise.resolve({ success: false, error: "Not supported in web mode" }),
-    // IPlatformService 新增更新提示能力后，Web fallback 没有同步补齐空实现，
-    // 根级 typecheck 会直接失败，连与桌面端无关的改动都没法完成校验。
-    // Web 端当前没有桌面更新器，先显式 no-op，保持接口完整且不改变现有行为。
-    onUpdateReady: () => () => {},
-    onUpdateCheckResult: () => () => {},
-    onUpdateStateChanged: () => () => {},
-    getUpdateState: () => Promise.resolve({ kind: "idle", enabled: true }),
-    downloadUpdate: () => Promise.resolve(),
-    cancelUpdateDownload: () => Promise.resolve(),
-    getDesktopSessionActivity: () => Promise.resolve({ runningAgentSessionCount: 0 }),
-    getDesktopZoomLevel: () => Promise.resolve({ zoomLevel: 0 }),
-    onDesktopZoomLevelChanged: () => () => {},
-    onPostUpdateReleaseNotes: () => () => {},
-    acknowledgePostUpdateReleaseNotes: () => Promise.resolve(),
-    skipUpdateVersion: () => Promise.resolve(),
-    quitAndInstallUpdate: () => Promise.resolve(),
-    getInstalledEditors: () => Promise.resolve([]),
-    openInEditor: () => Promise.resolve({ success: false, error: "Not supported in web mode" }),
-    executeDesktopCommand: () => Promise.resolve(),
-    setApplicationLocale: (_locale) => Promise.resolve(),
-    setTitleBarTheme: () => Promise.resolve(),
-    getDeviceId: () => {
-      const nav = globalThis.navigator as Navigator & { platform?: string };
-      const platform = nav?.platform ?? "";
-      const screenWidth = globalThis.screen?.width;
-      const screenHeight = globalThis.screen?.height;
-      const colorDepth = globalThis.screen?.colorDepth;
-      const parts = [
-        platform,
-        screenWidth !== undefined ? String(screenWidth) : "",
-        screenHeight !== undefined ? String(screenHeight) : "",
-        colorDepth !== undefined ? String(colorDepth) : "",
-      ];
-      return parts.filter(Boolean).join("|");
     },
   };
 }

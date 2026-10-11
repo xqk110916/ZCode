@@ -236,6 +236,10 @@ export {
   createPaperclipService,
   PAPERCLIP_TOKEN_CREDENTIAL_KEY,
 } from "./paperclip/paperclipService.js";
+// BoardHub 独立应用（packages/boardhub-server）直接装配 dbBoard 三件套；主应用装配在下方 createLocalServices。
+export { createDbBoardService } from "./dbBoard/dbBoardService.js";
+export { createDbBoardKnowledgeService } from "./dbBoardKnowledge/dbBoardKnowledgeService.js";
+export { createDbBoardAgentService } from "./dbBoardAgent/dbBoardAgentService.js";
 export { createLocalPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransferService.js";
 export {
   createLocalConversationShareArtifactSource,
@@ -703,16 +707,10 @@ export function getOffPeakRequestAuthBuilder(
 const managedHostApiNetworkTransports = new WeakMap<ServiceCollection, HostApiNetworkTransport>();
 
 /** Paperclip 服务的 WS/Emitter 资源；dispose 时统一释放。 */
-const managedPaperclipServices = new WeakMap<
-  ServiceCollection,
-  { dispose(): void }
->();
+const managedPaperclipServices = new WeakMap<ServiceCollection, { dispose(): void }>();
 
 /** 数据库助手 MCP server 的 loopback 监听；dispose 时统一释放。 */
-const managedDbBoardAgentServices = new WeakMap<
-  ServiceCollection,
-  { dispose(): void }
->();
+const managedDbBoardAgentServices = new WeakMap<ServiceCollection, { dispose(): void }>();
 
 export function registerManagedCuaHelperHostForDispose(
   services: ServiceCollection,
@@ -2143,10 +2141,7 @@ export function createLocalServices(options: {
       }
       try {
         const bindings = await dbBoardBindingsForSessionInjection.getBindings();
-        if (
-          bindings.mode !== "strict" ||
-          !bindings.bindings[workspaceBindingKeyOf(trimmed)]
-        ) {
+        if (bindings.mode !== "strict" || !bindings.bindings[workspaceBindingKeyOf(trimmed)]) {
           return null;
         }
         const info = await dbBoardAgentForSessionInjection.getMcpServer({ workspaceKey: trimmed });
@@ -2536,9 +2531,7 @@ export function createLocalServices(options: {
         selection: params.selection,
         prompt: params.prompt,
         querySource: params.querySource,
-        ...(params.maxOutputTokens
-          ? { maxOutputTokens: params.maxOutputTokens }
-          : {}),
+        ...(params.maxOutputTokens ? { maxOutputTokens: params.maxOutputTokens } : {}),
         // 蒸馏/生成输出 4096 token 常超 agent 默认 60s；调用方按需放宽上限。
         ...(params.timeoutMs ? { signal: AbortSignal.timeout(params.timeoutMs) } : {}),
       });
@@ -2556,9 +2549,7 @@ export function createLocalServices(options: {
         selection: params.selection,
         prompt: params.prompt,
         querySource: params.querySource,
-        ...(params.maxOutputTokens
-          ? { maxOutputTokens: params.maxOutputTokens }
-          : {}),
+        ...(params.maxOutputTokens ? { maxOutputTokens: params.maxOutputTokens } : {}),
         ...(params.timeoutMs ? { signal: AbortSignal.timeout(params.timeoutMs) } : {}),
       });
     },

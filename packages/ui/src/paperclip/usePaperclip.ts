@@ -26,7 +26,10 @@ import type {
   PaperclipRunSnapshot,
   PaperclipUpdateAgentInput,
 } from "@zcode/shared";
-import { usePaperclipActivity, type PaperclipIssueWriteToken } from "@/paperclip/usePaperclipActivity.js";
+import {
+  usePaperclipActivity,
+  type PaperclipIssueWriteToken,
+} from "@/paperclip/usePaperclipActivity.js";
 import { usePaperclipActions } from "@/paperclip/usePaperclipActions.js";
 
 export interface UsePaperclipState {
@@ -67,7 +70,10 @@ export interface UsePaperclipState {
   /** Paperclip 项目列表（任务工作区载体；随 refresh 一并拉取）。 */
   projects: PaperclipProject[];
   /** 确保绑定指定本地路径的项目存在（「当前 ZCode 工作区」选项的实现）。 */
-  ensureProjectForWorkspace: (input: { name: string; cwd: string }) => Promise<PaperclipProject | null>;
+  ensureProjectForWorkspace: (input: {
+    name: string;
+    cwd: string;
+  }) => Promise<PaperclipProject | null>;
   /** 按 adapterType 拉可选模型（懒加载缓存）。 */
   loadAdapterModels: (adapterType: string) => Promise<PaperclipAdapterModel[]>;
   /** 每个任务最新一条心跳（进行中优先）。 */
@@ -263,7 +269,6 @@ export function usePaperclip(): UsePaperclipState {
     return status;
   }, [paperclipService, loadAll]);
 
-
   const actions = usePaperclipActions({
     paperclipService,
     mergeIssueEvent,
@@ -273,10 +278,7 @@ export function usePaperclip(): UsePaperclipState {
     loadIssueThread: activity.loadIssueThread,
   });
 
-  const dispatcher = useMemo(
-    () => agents.find((agent) => agent.role === "ceo") ?? null,
-    [agents],
-  );
+  const dispatcher = useMemo(() => agents.find((agent) => agent.role === "ceo") ?? null, [agents]);
 
   const zcodeAgent = useMemo(
     () => agents.find((agent) => agent.adapterType === "http") ?? null,

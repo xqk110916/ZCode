@@ -146,9 +146,7 @@ export function PaperclipAddAgentDialog({
                         <span
                           className={cn(
                             "shrink-0 text-ui-sm",
-                            candidate.available
-                              ? "text-success"
-                              : "text-foreground-subtlest",
+                            candidate.available ? "text-success" : "text-foreground-subtlest",
                           )}
                         >
                           {intl.formatMessage({

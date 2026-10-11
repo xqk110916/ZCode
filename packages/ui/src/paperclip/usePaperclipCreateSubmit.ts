@@ -16,7 +16,8 @@ import {
 } from "@/paperclip/PaperclipCreateTaskDialog.js";
 
 export function usePaperclipCreateSubmit(input: {
-  workspacePath: string;
+  /** 工作区路径；缺省（BoardHub 独立应用）时创建任务不绑定「当前工作区」项目。 */
+  workspacePath?: string;
   dispatcher: PaperclipAgent | null;
   projects: readonly PaperclipProject[];
   createIssue: (payload: {
@@ -26,14 +27,16 @@ export function usePaperclipCreateSubmit(input: {
     projectId?: string;
     assigneeAgentId?: string;
   }) => Promise<boolean>;
-  ensureProjectForWorkspace: (input: { name: string; cwd: string }) => Promise<PaperclipProject | null>;
+  ensureProjectForWorkspace: (input: {
+    name: string;
+    cwd: string;
+  }) => Promise<PaperclipProject | null>;
 }) {
   const { intl } = useZCodeIntl();
   const [submitting, setSubmitting] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [createState, setCreateState] = useState<PaperclipCreateDialogState>(
-    EMPTY_CREATE_DIALOG_STATE,
-  );
+  const [createState, setCreateState] =
+    useState<PaperclipCreateDialogState>(EMPTY_CREATE_DIALOG_STATE);
 
   /** 打开对话框：dispatcher 存在时默认指派主 Agent；当前工作区已注册为项目时默认绑定。 */
   const openCreateDialog = useCallback(
@@ -51,21 +54,27 @@ export function usePaperclipCreateSubmit(input: {
   const submitCreate = useCallback(async () => {
     if (!createState.title.trim() || submitting) return;
     let projectId = createState.projectId;
-    if (projectId === PAPERCLIP_CURRENT_WORKSPACE_PROJECT && input.workspacePath) {
-      const project = await input.ensureProjectForWorkspace({
-        // 项目名取工作区目录名（Paperclip 项目重名可共存，按 cwd 幂等匹配）。
-        // Windows 路径是反斜杠分隔，直接 split("/") 会把整段绝对路径当目录名，
-        // 先归一化为 / 再切（与 useAutomationProjectOptions 的取目录名口径一致）。
-        name:
-          input.workspacePath.replace(/\\/g, "/").split("/").filter(Boolean).pop() ??
-          input.workspacePath,
-        cwd: input.workspacePath,
-      });
-      if (!project) {
-        // ensureProjectForWorkspace 已把原因写进 actionError；中止提交。
-        return;
+    if (projectId === PAPERCLIP_CURRENT_WORKSPACE_PROJECT) {
+      if (!input.workspacePath) {
+        // 无工作区上下文（BoardHub 独立应用）：该哨兵值不应出现（对话框不提供该选项），
+        // 兜底按「不绑定项目」提交，避免把哨兵值发给 Paperclip server。
+        projectId = "";
+      } else {
+        const project = await input.ensureProjectForWorkspace({
+          // 项目名取工作区目录名（Paperclip 项目重名可共存，按 cwd 幂等匹配）。
+          // Windows 路径是反斜杠分隔，直接 split("/") 会把整段绝对路径当目录名，
+          // 先归一化为 / 再切（与 useAutomationProjectOptions 的取目录名口径一致）。
+          name:
+            input.workspacePath.replace(/\\/g, "/").split("/").filter(Boolean).pop() ??
+            input.workspacePath,
+          cwd: input.workspacePath,
+        });
+        if (!project) {
+          // ensureProjectForWorkspace 已把原因写进 actionError；中止提交。
+          return;
+        }
+        projectId = project.id;
       }
-      projectId = project.id;
     }
     setSubmitting(true);
     const dispatcher = input.dispatcher;

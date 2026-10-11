@@ -1,4 +1,4 @@
-import { access, readFile, mkdir, rename } from "node:fs/promises";
+import { access, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type {
@@ -6,235 +6,35 @@ import type {
   ProviderFamilyDomain,
   ProviderFamilyConnectionSelectionSettings,
 } from "@zcode/shared";
-import {
-  appSettingsPatchSchema,
-  appSettingsSchema,
-  formatLogPrefix,
-  formatZodError,
-} from "@zcode/shared";
+import { appSettingsPatchSchema, appSettingsSchema, formatLogPrefix } from "@zcode/shared";
 import type { ISettingService } from "./setting.js";
 import { normalizeSettingsPatch } from "#src/setting/normalizeSettingsPatch.js";
 import {
   ProjectSessionStore,
   splitProjectSessionPatch,
-  stripProjectSessionFields,
 } from "#src/customResources/projectSessionStore.js";
 import { createProjectSessionRouting } from "#src/setting/projectSessionRouting.js";
+import {
+  getSettingsFile,
+  readSettings,
+  readSettingsWithMeta,
+  writeSettings,
+} from "#src/setting/settingsFileStore.js";
 import { copyDataDirectory, getDataBaseDir, validateDataBaseDirTarget } from "../paths.js";
-import { isEffectiveDevelopmentNodeEnv } from "../runtime-tools/nodeEnv.js";
 import { maybeThrowInjectedFsFault } from "../fs/fsFaultInjection.js";
-import { atomicWriteText } from "../fs/atomicFileUtils.js";
 import { withSettingsWriteQueueTimeout } from "./settingsWriteQueue.js";
 import {
   migrateLegacyAccountConnectionSettings,
-  needsLegacyAccountConnectionMigration,
-  readLegacyAccountConnectionSettingsFile,
   readIncompleteLegacyTeamConnections,
+  readLegacyAccountConnectionSettingsFile,
   retainLegacyAccountConnectionFields,
   type LegacyTeamConnection,
 } from "#src/setting/legacyAccountConnectionSettings.js";
 const MAX_RECENT_PROJECTS = 10;
 const DEFAULT_PROJECT_NAME = "ZCodeProject";
-const SETTINGS_PARSE_RETRY_DELAY_MS = 300;
-const SETTINGS_PARSE_RETRY_COUNT = 3;
 
 const log = (...args: unknown[]) =>
   console.log(formatLogPrefix("settingService", process.pid), ...args);
-const debugLog = (...args: unknown[]) => {
-  // NODE_ENV 来自用户 shell 时会误导服务层 debug 开关；统一使用 ZCODE_RUNTIME_ENV。
-  if (!isEffectiveDevelopmentNodeEnv()) {
-    return;
-  }
-  console.debug(formatLogPrefix("settingService", process.pid), ...args);
-};
-
-function resolveUserHomeDir() {
-  // 独立桌面 Dev 实例已设置自己的 home，设置服务却仍写真实 HOME，
-  // 导致启动迁移和外观操作污染其他实例。与 Electron 的显式 home 覆盖保持一致。
-  const envHome =
-    process.env.ZCODE_DESKTOP_HOME_DIR?.trim() ||
-    process.env.HOME?.trim() ||
-    process.env.USERPROFILE?.trim();
-  return envHome && envHome.length > 0 ? envHome : homedir();
-}
-
-function getSettingsDir() {
-  return join(resolveUserHomeDir(), ".zcode", "v2");
-}
-
-function getSettingsFile() {
-  return join(getSettingsDir(), "setting.json");
-}
-
-function defaultSettings(): AppSettings {
-  return appSettingsSchema.parse({});
-}
-
-function buildCorruptSettingsBackupPath(settingsFile: string): string {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  return `${settingsFile}.corrupt-${timestamp}`;
-}
-
-async function quarantineCorruptSettingsFile(settingsFile: string, error: unknown): Promise<void> {
-  const backupPath = buildCorruptSettingsBackupPath(settingsFile);
-  try {
-    // 用户手动编辑或远端磁盘异常可能把 setting.json 写成非 JSON（例如 ":wq"）。
-    // 如果只返回默认值不隔离坏文件，每次启动都会重复解析失败；这里保留备份后让后续 update 重建合法配置。
-    maybeThrowInjectedFsFault({ operation: "rename", path: settingsFile });
-    await rename(settingsFile, backupPath);
-    log("invalid settings json backed up:", backupPath, "error:", error);
-  } catch (renameError) {
-    if (
-      renameError &&
-      typeof renameError === "object" &&
-      "code" in renameError &&
-      (renameError as { code?: string }).code === "ENOENT"
-    ) {
-      // 启动时多个服务可能同时读取同一个坏 setting.json。
-      // 第一个读取已经完成隔离后，后续读取再 rename 会遇到 ENOENT；这是并发下的预期结果，不应当按备份失败刷错误日志。
-      log("invalid settings json already quarantined by another reader, returning defaults");
-      return;
-    }
-    log("invalid settings json backup failed, returning defaults. error:", renameError);
-  }
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function shouldPersistSettingsMigrations(rawValue: unknown): boolean {
-  if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) return false;
-  const raw = rawValue as Record<string, unknown>;
-  return (
-    (needsLegacyAccountConnectionMigration(rawValue) &&
-      readIncompleteLegacyTeamConnections(rawValue).length === 0) ||
-    raw.closeToTrayOnWindowsMigrationInitialized !== true ||
-    raw.messageStreamShowReasoningMigrationInitialized !== true
-  );
-}
-
-interface ReadSettingsResult {
-  settings: AppSettings;
-  needsMigrationPersist: boolean;
-}
-
-async function readSettingsWithMeta(): Promise<ReadSettingsResult> {
-  const settingsFile = getSettingsFile();
-  try {
-    // settingService.get() 会被 UI 和远程会话高频调用。
-    // 之前每次读取都把完整配置写入生产日志，导致日志暴涨且暴露路径/配置细节；普通读取只保留开发态 debug。
-    debugLog("reading settings from:", settingsFile);
-    const raw = await readFile(settingsFile, "utf-8");
-    let rawValue: unknown;
-    try {
-      rawValue = JSON.parse(raw);
-    } catch (parseError) {
-      let lastParseError: unknown = parseError;
-      // setting.json 可能正被另一次 update 覆盖写入，读者会短暂读到半截 JSON。
-      // 先做短重试，只有连续失败才按坏文件隔离，避免把正常会话配置误清成默认值。
-      for (let retryAttempt = 1; retryAttempt <= SETTINGS_PARSE_RETRY_COUNT; retryAttempt += 1) {
-        await delay(SETTINGS_PARSE_RETRY_DELAY_MS);
-        try {
-          rawValue = JSON.parse(await readFile(settingsFile, "utf-8"));
-          break;
-        } catch (retryParseError) {
-          lastParseError = retryParseError;
-        }
-      }
-      if (rawValue === undefined) {
-        await quarantineCorruptSettingsFile(settingsFile, lastParseError);
-        return {
-          settings: defaultSettings(),
-          needsMigrationPersist: false,
-        };
-      }
-    }
-    const result = appSettingsSchema.safeParse(migrateLegacyAccountConnectionSettings(rawValue));
-    if (!result.success) {
-      log(
-        "read failed schema validation, returning defaults. error:",
-        formatZodError(result.error),
-      );
-      return {
-        settings: defaultSettings(),
-        needsMigrationPersist: false,
-      };
-    }
-    debugLog("read result:", JSON.stringify(result.data));
-    return {
-      settings: result.data,
-      needsMigrationPersist: shouldPersistSettingsMigrations(rawValue),
-    };
-  } catch (err) {
-    if (
-      err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as { code?: string }).code === "ENOENT"
-    ) {
-      debugLog("settings file missing, using defaults");
-      return {
-        settings: defaultSettings(),
-        needsMigrationPersist: false,
-      };
-    }
-
-    // 文件解析失败等异常兜底返回默认值
-    log("read failed, returning defaults. error:", err);
-    return {
-      settings: defaultSettings(),
-      needsMigrationPersist: false,
-    };
-  }
-}
-
-async function readSettings(): Promise<AppSettings> {
-  return (await readSettingsWithMeta()).settings;
-}
-
-async function writeSettings(
-  settings: AppSettings,
-  shouldCommit: () => boolean = () => true,
-  runExclusiveCommit: (commit: () => Promise<void>) => Promise<void> = (commit) => commit(),
-  enterCommitPhase: () => void = () => undefined,
-  commitAccountSelection = false,
-): Promise<void> {
-  const settingsDir = getSettingsDir();
-  const settingsFile = getSettingsFile();
-  // Windows 下测试只改了 HOME，模块顶层常量如果在导入时就把 homedir() 固化，
-  // 后续读写仍会串到真实用户目录。这里改成每次按当前环境解析配置路径，保证本地和测试都稳定。
-  log("writing settings to:", settingsFile, JSON.stringify(settings));
-  maybeThrowInjectedFsFault({ operation: "mkdir", path: settingsDir });
-  await mkdir(settingsDir, { recursive: true });
-  if (!shouldCommit()) return;
-  maybeThrowInjectedFsFault({ operation: "writeFile", path: settingsFile });
-  const raw = await readLegacyAccountConnectionSettingsFile(settingsFile);
-  const rollbackFields = retainLegacyAccountConnectionFields(raw);
-  // 项目会话三字段改存 custom-resources.sqlite（specs/services/custom-resource-store.md）；
-  // setting.json 不再持久化这三个 key，旧文件里的值视为废弃。
-  const persisted = { ...rollbackFields, ...stripProjectSessionFields(settings) };
-  // 旧 Team 尚待 OAuth 补组织时，schema 的默认 {} 不是用户的新选择。
-  // 普通偏好保存必须保留新字段缺席；只有迁移提交或用户显式选连接才结束旧导入。
-  if (!commitAccountSelection && readIncompleteLegacyTeamConnections(raw).length > 0) {
-    delete persisted.providerFamilyConnectionSelections;
-  }
-  await atomicWriteText(settingsFile, JSON.stringify(persisted, null, 2), {
-    beforeRename: () => {
-      if (!shouldCommit()) {
-        // 提交前超时的旧写只能清理临时文件，不能晚到 rename 覆盖新语言偏好。
-        throw new Error("stale settings write skipped before atomic rename");
-      }
-      enterCommitPhase();
-    },
-    runRename: (renameFile) =>
-      runExclusiveCommit(async () => {
-        if (!shouldCommit()) throw new Error("stale settings write skipped before atomic rename");
-        await renameFile();
-      }),
-  });
-  log("write done");
-}
 
 export function createSettingService(): ISettingService {
   return createSettingServiceWithMigrations().service;
@@ -345,10 +145,9 @@ export function createSettingServiceWithMigrations(): {
           ...projectSessionPatch,
         });
         if (mergedProjectSession.recentProjects) {
-          mergedProjectSession.recentProjects = [...new Set(mergedProjectSession.recentProjects)].slice(
-            0,
-            MAX_RECENT_PROJECTS,
-          );
+          mergedProjectSession.recentProjects = [
+            ...new Set(mergedProjectSession.recentProjects),
+          ].slice(0, MAX_RECENT_PROJECTS);
         }
 
         if (Object.keys(filePatch).length > 0) {

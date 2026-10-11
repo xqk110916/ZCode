@@ -53,8 +53,10 @@ export function DbBoardPage(props: {
   workspacePath: string;
   workspaceIdentity?: string;
   onOpenChat: () => void;
+  /** 助手对话入口依赖 ZCode agent 会话；BoardHub 独立应用传 false 隐藏。 */
+  agentChatEnabled?: boolean;
 }) {
-  const { operator, workspacePath, workspaceIdentity, onOpenChat } = props;
+  const { operator, workspacePath, workspaceIdentity, onOpenChat, agentChatEnabled = true } = props;
   const { intl } = useZCodeIntl();
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
   const dbBoard = useDbBoard({ workspaceKey });
@@ -68,9 +70,7 @@ export function DbBoardPage(props: {
 
   const service = dbBoard.connection;
   const activeEntry = useMemo(() => {
-    const fromList = dbBoard.connections.find(
-      (entry) => entry.id === service?.activeConnectionId,
-    );
+    const fromList = dbBoard.connections.find((entry) => entry.id === service?.activeConnectionId);
     if (fromList) {
       return fromList;
     }
@@ -138,7 +138,10 @@ export function DbBoardPage(props: {
                 ))}
               </SelectContent>
             </Select>
-            <Button size="sm" onClick={() => void dbBoard.setBinding(bindTargetId ?? dbBoard.connections[0]!.id)}>
+            <Button
+              size="sm"
+              onClick={() => void dbBoard.setBinding(bindTargetId ?? dbBoard.connections[0]!.id)}
+            >
               <Pin />
               {intl.formatMessage({ id: "dbboard.binding.bindAction" })}
             </Button>
@@ -230,12 +233,22 @@ export function DbBoardPage(props: {
                     <AlertDialogDescription>
                       {intl.formatMessage(
                         { id: "dbboard.binding.confirmDescription" },
-                        { connection: connectionLabel(selectEntries.find((entry) => entry.id === (service?.activeConnectionId ?? selectEntries[0]!.id)) ?? selectEntries[0]!), workspace: workspaceKey },
+                        {
+                          connection: connectionLabel(
+                            selectEntries.find(
+                              (entry) =>
+                                entry.id === (service?.activeConnectionId ?? selectEntries[0]!.id),
+                            ) ?? selectEntries[0]!,
+                          ),
+                          workspace: workspaceKey,
+                        },
                       )}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>{intl.formatMessage({ id: "common.cancel" })}</AlertDialogCancel>
+                    <AlertDialogCancel>
+                      {intl.formatMessage({ id: "common.cancel" })}
+                    </AlertDialogCancel>
                     <AlertDialogAction
                       onClick={() =>
                         void dbBoard.setBinding(service?.activeConnectionId ?? selectEntries[0]!.id)
@@ -251,7 +264,8 @@ export function DbBoardPage(props: {
               variant="outline"
               className={cn(
                 "gap-1",
-                service?.state === "connected" && "border-success/40 bg-success-subtle text-success",
+                service?.state === "connected" &&
+                  "border-success/40 bg-success-subtle text-success",
                 service?.state === "error" &&
                   "border-destructive/40 bg-destructive/10 text-destructive",
               )}
@@ -265,13 +279,17 @@ export function DbBoardPage(props: {
                 ? `${stateLabel}：${service.error.slice(0, 48)}`
                 : stateLabel}
             </Badge>
-            {dbBoard.loadingTables || dashboards.generating ? <Spinner className="size-3.5" /> : null}
-            <DbBoardAgentChatEntry
-              workspacePath={workspacePath}
-              workspaceIdentity={workspaceIdentity}
-              username={operator}
-              onOpenChat={onOpenChat}
-            />
+            {dbBoard.loadingTables || dashboards.generating ? (
+              <Spinner className="size-3.5" />
+            ) : null}
+            {agentChatEnabled ? (
+              <DbBoardAgentChatEntry
+                workspacePath={workspacePath}
+                workspaceIdentity={workspaceIdentity}
+                username={operator}
+                onOpenChat={onOpenChat}
+              />
+            ) : null}
             <Button
               variant="ghost"
               size="icon-sm"

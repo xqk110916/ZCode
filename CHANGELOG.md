@@ -8,6 +8,21 @@
 
 ### 新增
 
+#### BoardHub 独立应用（数据库看板 + Paperclip 任务编排脱离 ZCode 单独使用）
+
+- **架构加固（安全 / 可靠性）**：① dev 服务端默认只绑 `127.0.0.1`（此前监听全部接口且无鉴权，channel 上有凭据与数据库配置服务，局域网可达）；② 桌面端 server 子进程崩溃自愈——带退避序列 [1s/5s/15s] 重启（新端口）并重载窗口，连续 3 次失败停止自动重试并展示错误页；③ 端口协商改为 `PORT=0` 随机端口 + stdout `BOARDHUB_SERVER_READY` 协议行回传，消除「先探测再启动」的 TOCTOU 竞态（同时修复 Electron `utilityProcess.fork` stdio 默认 inherit 导致子进程 stdout 不可读的问题）；④ server 与桌面主进程日志落盘 `~/.boardhub/logs/`（打包形态无终端可看，启动失败错误页指引日志文件路径）；⑤ 跨进程写并发防护——Web 版与桌面版共用 `~/.boardhub` 时，`setting.json` 写入、dbBoard 连接配置（由「全量内存态覆盖」改为锁内定向变更，不再抹掉另一实例的连接/绑定）、使用情况汇总、知识库 JSON 均走共享文件锁，并修复外层锁与 `atomicWriteJson` 内建锁嵌套导致的自等死锁（services 存量测试捕获）。
+
+- **语义修正与共享收敛**：`PaperclipPage.workspacePath` 改可选——BoardHub 不传，创建任务不再把固定字符串 `"boardhub"` 注册为 Paperclip 项目 `localFolder`（对话框不提供「当前工作区」选项）；`PaperclipSettingsSection` 新增 `showAutoClaim`（BoardHub 隐藏无效的自动认领开关）；no-op 平台实现提取为 `@zcode/client/web-platform` 的 `createNoopWebPlatform()`，ZCode Web 端改为「基座 + 产品化方法覆盖」，消除双份维护。
+- 新增 `packages/boardhub-server` / `packages/boardhub-web` 两个包与 `pnpm dev:boardhub` 入口：数据库看板与 Paperclip 任务面板封装为独立 Web 应用（后续可静态托管 + 极简 Electron 壳演进为桌面端），顶部三 Tab（数据库看板 / 任务编排 / 设置），复用 `@zcode/services` 的 dbBoard 三件套与 paperclip 服务及 `@zcode/ui` 页面组件，不注册 zcodeAgent 等核心服务、无 ZCode 账号依赖。
+- **BoardHub 桌面端（Electron 壳，`packages/boardhub-desktop`）**：`pnpm bundle:boardhub` 一键打包（mac dmg / win nsis 配置就绪）。主进程经 `utilityProcess` 拉起 boardhub-server 单文件 bundle（esbuild 全内联，5.6MB），窗口加载其静态托管的 web 产物（同源 `/ws`，前端零改动）；空闲端口协商 + 健康等待（15s）+ 启动失败错误页；单实例锁、macOS 关窗保活 server、`will-quit` 收口子进程；数据沿用 `~/.boardhub` 与 Web 版互通。dev 模式 `pnpm dev:boardhub:desktop` 配合 vite dev server（`ELECTRON_START_URL`）。选型说明：因服务端硬依赖 Node（pg/node:sqlite/MCP），Tauri 需 sidecar 打包 Node 抵消其体积优势，故用 Electron（版本对齐主应用 41.0.3）。
+- **AI 模型自配**：看板自然语言生成与知识蒸馏改经 OpenAI 兼容端点直连（设置页配置 Base URL / 模型 ID，API Key 加密存储），不依赖 ZCode 模型链路；未配置时浏览 / 查询 / 审计 / 手动看板不受影响。
+- **数据隔离**：独立应用启动即切换数据根到 `~/.boardhub`，与 ZCode 主应用的设置、凭据、看板配置互不可见。
+- 独立版不含「在 ZCode 中执行」与自动认领（相关 UI 在未传执行回调时自动隐藏）、不含数据库助手对话入口（依赖 ZCode 会话）；主应用行为不变。
+- 兼容改动：`PaperclipPage` 执行回调与 `DbBoardPage` 助手入口改为可选 props（主应用传参不变）；`AppSettings` 新增 `boardhubModelBaseUrl/Id` 可选字段。
+- **修复（存量）**：settingService 的 settings 目录此前独立解析 HOME，绕过数据根链（`setDataBaseDir` / `ZCODE_DATA_BASE_DIR`），与凭据等数据目录收口不一致——桌面 dev 隔离实例与 BoardHub 的 setting.json 仍写真实 HOME。现统一走 `getAppConfigDir()`，主应用默认路径不变。
+- **应用图标**：延续 ZCode 斜切设计语言——深色 squircle 底、三根左低右高的斜切渐变柱（青→蓝→紫）、连接柱顶数据点的发光趋势线（末端点强调）、左下极淡回形针（Paperclip 意象，顺时针倾斜呼应上升动势）。源稿 `build/icon.svg`，1024 PNG 由其生成，electron-builder 自动产出 icns/ico，同一图标用作 Web 端 favicon；经两轮视觉评审迭代（数据点统一坐柱顶线、柱底提亮保小尺寸可读性、回形针移左下平衡构图）。
+- 行为规范：`specs/boardhub/standalone-app.md`；测试：boardhub-server 包 `boardhubModel.test.ts` 7 用例。验证：Web 三 Tab 渲染、WS 通道、模型配置保存落盘 `~/.boardhub`、主应用回归无异常；桌面端 `--dir` 产物端到端冒烟（server 子进程 + 端口协商 + 静态托管 + 渲染窗口 + 退出清理）。
+
 #### 数据库看板 · 数据库助手 Agent（MCP 能力层 + 面板对话入口）
 
 - **工作区绑定（准入控制，轻量版）**：连接配置升级 v3，新增 `bindings: Record<workspaceKey, connectionId>`——**创建第一条绑定即进入严格模式**：只有绑定了连接的项目（左侧任务对话的工作区）可以使用数据库看板与数据库助手，未绑定项目面板显示空态引导（可直接选择连接绑定），数据库助手 `getMcpServer` 对未绑定工作区不发 token（会话从根上建不起来）；清空全部绑定回到 legacy 模式（全员可用，v1/v2 旧配置迁移后即此模式，行为不变）。页头连接选择器旁新增 Pin 按钮：绑定当前连接到本项目（首次绑定弹确认，说明对其他项目的影响）/解除绑定；打开面板与 15s 周期对账会把激活连接自动拉齐到本工作区绑定的连接（全局单激活的轻量取舍：多窗口并发时后打开者生效）。绑定键统一为 `workspaceIdentity || workspacePath`；除 UI 门控与助手发 token 卡点外，**数据面另有服务端校验**：全部触库方法（元数据/浏览/写入/审计/看板生成与执行/汇总）接受可选 workspaceKey，严格模式下未绑定工作区直接拒绝（错误码 workspace-not-bound）；无 key 调用（服务端脚本、知识库服务与 MCP 工具内部）不门控——助手侧准入由发 token 承担；连接管理面不校验（blocked 工作区可完成绑定自救）。renderer 自报 workspaceKey 与 operator 同级 advisory，数据侧硬边界仍是无删除/只读事务/审计。绑定键存取两侧按归一化形态匹配（正斜杠统一为反斜杠 + 小写；解绑按归一化匹配删除、兼容历史原样键）——不同入口添加工作区产生的路径形态差异（`F:/a` vs `F:\A`）互不排斥。
@@ -76,6 +91,9 @@
 
 ### 修复
 
+- **Paperclip「启动本地服务」在 macOS 一直转圈（跨平台启动链路统一重构）**：POSIX 启动命令带 `setsid`（util-linux 工具，macOS 没有），`/bin/bash` 立即 127 退出、无服务进程，UI 健康轮询空转到 300s 超时（`~/.paperclip/server-run.log` 仅 `setsid: command not found`）。Windows 分支虽无此问题（走 `cmd.exe /c`），但 `stdio: "ignore"` 丢弃全部输出——启动失败零线索，超时提示还指向一个从未被写入的 `run-win.log`。统一重构：全平台直接 detached spawn（Node 的 `detached` 在 POSIX 上即 `setsid(2)` 系统调用，不再依赖 bash/setsid/nohup 命令与 shell 引号处理），Windows 保留 `cmd.exe /c` 包裹（.cmd 无法被 detached spawn 直接执行）；stdout/stderr 统一经继承 fd 落 `~/.paperclip/server-run.log`，超时提示与实际日志路径对齐；**PATH 配套修复**——npx shebang 是 `env node`，宿主 PATH 里 nvm 旧版 node 排前会让 paperclipai 跑在低于要求的 node 上（实测 nvm 24.7 被 doctor 拒绝要求 ≥24.11），发射时把 npx 同目录前置到 PATH 保证 node 版本配套。测试 11 用例全过；实测端到端：服务经新链路启动，面板 Connected · live、默认公司与 ZCode agent 自动注册。
+- **lint max-lines error（settingService 超行数上限）**：`settingService.ts` 483 行超过 400 行限制导致 `pnpm lint` 失败。将 setting.json 的文件存储层（路径解析、坏文件隔离与短重试、读取迁移标记、原子写与旧 Team 字段保留）拆到 `#src/setting/settingsFileStore.ts`，原文件降至 286 行；读写语义与公开 API 不变（`projectSessionRouting` 等存量测试全过）。
+- **`packages/ui` 测试从仓库根目录运行必失败**：`node --import tsx --test` 下 tsx 的 tsconfig paths 解析跟随 cwd，从根目录跑 ui 测试时读不到 ui 包的 `@/*` alias，`nonCliAcpRetirement.test.ts` 因 `@/lib` 解析失败整文件报错。为 `services` / `ui` / `boardhub-server` 三个包补 `test` 脚本（从包目录运行，alias 上下文正确），根目录新增聚合命令 `pnpm test`；ui 包 12 个用例现全部通过。
 - **连接编辑对话框（旧格式连接适配）**：编辑 v1 旧格式迁移来的连接时，「连接名称」用 `host/database` 派生标签预填（该连接此前从未存过名称/环境，字段为空属正常；保存后名称持久化，下次编辑正常回显）；「保存」按钮改为按必填项（host/端口/库/用户名）显式置灰，与「测试连接」同一套校验口径——只填名称/环境不会点亮保存。
 - **数据库看板连接状态自愈**：服务重启/断连窗口期，挂载时的一次性调用失败会永久滞留——页头同时出现「尚未配置连接」与「已连接」徽标、数据浏览顶部滞留「尚未配置数据库连接」红色横幅，但表实际可查（服务端状态一致，纯粹是 UI 旧状态）。修复：面板打开期间每 15s 用内存态快照对账（服务端有激活连接而本地清单缺失时自动补拉连接清单）；页头选择器在清单暂缺时回退用快照合成条目，永不与状态徽标矛盾；表清单加载失败不再写入用户动作错误横幅，改为表列表内联错误 + 重试按钮（成功自动清除）。
 - **数据库看板排版**：主视图去掉重复标题，line tabs 与连接切换/状态同一条工具栏；知识库默认让业务卡片占满剩余高度，项目档案与构建收进可折叠摘要；数据浏览表列表改为两行并纠正选中态 token；操作日志筛选并入面板头。
@@ -95,21 +113,21 @@
 
 ### 提交清单
 
-| 提交 | 说明 |
-| --- | --- |
-| `6f0e5dd` | feat(services): 分组/项目拆分到 custom-resources sqlite |
-| `dbc60bf` | feat(ui): 设置新增「引导(新)」分区批量添加前后端项目（已废弃） |
-| `6e648d4` | refactor(ui): 引导(新)复用 OccupationOnboarding 覆盖层（已废弃） |
-| `cf8a65a` | fix(ui): Web 端选文件夹改用服务端目录浏览器（已废弃） |
-| `7d8d721` | fix(server): dev 监听共享包源码支持热更新 |
-| `78f9e28` | feat(ui): Web 端引导(新)优先弹 Windows 原生文件夹选择器（已废弃） |
-| `a83c2d7` | fix(services): guide-entry 描述符模块保持浏览器安全（已废弃） |
-| `08cf457` | docs(agents): 桌面端打包分档 + 双端开发验证口径 |
-| `652b24d` | chore(web): vite dev 端口占用时直接失败 |
-| `1528272` | docs: 确立提交规范并新建 CHANGELOG |
-| `e9ca3d1` | revert: 移除已废弃的「引导(新)」功能 |
-| `18ff19b` | feat(services): Paperclip 本地服务启停（Windows/WSL + macOS） |
-| `b7d881c` | fix(services): 首连自动补建默认 Paperclip 公司 |
-| `91f6746` | feat(paperclip): Windows 原生服务生命周期、lead-agent 体验与去重 |
-| `69e7ac2` | feat(paperclip): ZCode 自主执行模式与自动认领 |
-| 本次提交 | feat(db-board): 数据库看板三件套——数据操作+探索看板、项目业务知识库、数据库助手 Agent（MCP）+工作区绑定 |
+| 提交      | 说明                                                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------- |
+| `6f0e5dd` | feat(services): 分组/项目拆分到 custom-resources sqlite                                                 |
+| `dbc60bf` | feat(ui): 设置新增「引导(新)」分区批量添加前后端项目（已废弃）                                          |
+| `6e648d4` | refactor(ui): 引导(新)复用 OccupationOnboarding 覆盖层（已废弃）                                        |
+| `cf8a65a` | fix(ui): Web 端选文件夹改用服务端目录浏览器（已废弃）                                                   |
+| `7d8d721` | fix(server): dev 监听共享包源码支持热更新                                                               |
+| `78f9e28` | feat(ui): Web 端引导(新)优先弹 Windows 原生文件夹选择器（已废弃）                                       |
+| `a83c2d7` | fix(services): guide-entry 描述符模块保持浏览器安全（已废弃）                                           |
+| `08cf457` | docs(agents): 桌面端打包分档 + 双端开发验证口径                                                         |
+| `652b24d` | chore(web): vite dev 端口占用时直接失败                                                                 |
+| `1528272` | docs: 确立提交规范并新建 CHANGELOG                                                                      |
+| `e9ca3d1` | revert: 移除已废弃的「引导(新)」功能                                                                    |
+| `18ff19b` | feat(services): Paperclip 本地服务启停（Windows/WSL + macOS）                                           |
+| `b7d881c` | fix(services): 首连自动补建默认 Paperclip 公司                                                          |
+| `91f6746` | feat(paperclip): Windows 原生服务生命周期、lead-agent 体验与去重                                        |
+| `69e7ac2` | feat(paperclip): ZCode 自主执行模式与自动认领                                                           |
+| 本次提交  | feat(db-board): 数据库看板三件套——数据操作+探索看板、项目业务知识库、数据库助手 Agent（MCP）+工作区绑定 |

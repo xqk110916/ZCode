@@ -51,9 +51,9 @@ export function usePaperclipActivity(input: {
   const services = useServices();
   const paperclipService = services.paperclipService;
   const [runs, setRuns] = useState<PaperclipRunSnapshot[]>([]);
-  const [commentsByIssueId, setCommentsByIssueId] = useState<Record<string, PaperclipIssueComment[]>>(
-    {},
-  );
+  const [commentsByIssueId, setCommentsByIssueId] = useState<
+    Record<string, PaperclipIssueComment[]>
+  >({});
   const [interactionsByIssueId, setInteractionsByIssueId] = useState<
     Record<string, PaperclipInteraction[]>
   >({});
@@ -202,9 +202,15 @@ export function usePaperclipActivity(input: {
         logger.warn("paperclip issue comments failed", { error: commentsResult.reason, issueId });
       }
       if (interactionsResult.status === "fulfilled") {
-        setInteractionsByIssueId((current) => ({ ...current, [issueId]: interactionsResult.value }));
+        setInteractionsByIssueId((current) => ({
+          ...current,
+          [issueId]: interactionsResult.value,
+        }));
       } else {
-        logger.warn("paperclip issue interactions failed", { error: interactionsResult.reason, issueId });
+        logger.warn("paperclip issue interactions failed", {
+          error: interactionsResult.reason,
+          issueId,
+        });
       }
       if (runsResult.status === "fulfilled") {
         setRuns((current) => runsResult.value.reduce(upsertPaperclipRun, current));

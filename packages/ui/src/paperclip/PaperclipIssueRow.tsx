@@ -96,7 +96,11 @@ function segmentClass(index: number, stageIndex: number, phase: PaperclipProgres
 }
 
 function commentSnippet(body: string): string {
-  const line = body.split(/\r?\n/).map((part) => part.trim()).find(Boolean) ?? "";
+  const line =
+    body
+      .split(/\r?\n/)
+      .map((part) => part.trim())
+      .find(Boolean) ?? "";
   return line.length > 160 ? `${line.slice(0, 157)}…` : line;
 }
 
@@ -195,10 +199,7 @@ export function PaperclipIssueRow({
   const snippet = progress.latestComment
     ? commentSnippet(progress.latestComment.body)
     : (run?.detail ?? "");
-  const showError =
-    progress.phase === "failed" &&
-    Boolean(run?.error) &&
-    run?.error !== snippet;
+  const showError = progress.phase === "failed" && Boolean(run?.error) && run?.error !== snippet;
   const updated = formatTimestamp(issue.updatedAt ?? issue.createdAt, locale);
 
   return (
@@ -234,8 +235,13 @@ export function PaperclipIssueRow({
               {issue.identifier}
             </span>
           ) : null}
-          <span className="min-w-0 flex-1 truncate text-ui-base text-foreground">{issue.title}</span>
-          <Badge variant="secondary" className={cn("text-ui-xs", priorityBadgeClass(issue.priority))}>
+          <span className="min-w-0 flex-1 truncate text-ui-base text-foreground">
+            {issue.title}
+          </span>
+          <Badge
+            variant="secondary"
+            className={cn("text-ui-xs", priorityBadgeClass(issue.priority))}
+          >
             {intl.formatMessage({ id: priorityLabelKey(issue.priority) })}
           </Badge>
           {updated ? (
@@ -251,16 +257,26 @@ export function PaperclipIssueRow({
           ) : null}
           {openDescendants > 0 ? (
             <span className="shrink-0 text-ui-xs text-warning">
-              {intl.formatMessage({ id: "paperclip.issues.openChildren" }, { count: openDescendants })}
+              {intl.formatMessage(
+                { id: "paperclip.issues.openChildren" },
+                { count: openDescendants },
+              )}
             </span>
           ) : null}
-          {issue.status !== "done" && issue.status !== "cancelled" && issue.status !== "in_review" && !pendingDecision ? (
+          {issue.status !== "done" &&
+          issue.status !== "cancelled" &&
+          issue.status !== "in_review" &&
+          !pendingDecision ? (
             <Button
               variant="ghost"
               size="sm"
               className="text-ui-sm"
               disabled={!canComplete}
-              title={canComplete ? undefined : intl.formatMessage({ id: "paperclip.issues.cannotComplete" })}
+              title={
+                canComplete
+                  ? undefined
+                  : intl.formatMessage({ id: "paperclip.issues.cannotComplete" })
+              }
               onClick={(event) => {
                 event.stopPropagation();
                 if (canComplete) onMarkDone();
@@ -340,9 +356,7 @@ export function PaperclipIssueRow({
               </span>
             ) : null}
           </p>
-          {snippet ? (
-            <p className="truncate text-ui-sm text-foreground">{snippet}</p>
-          ) : null}
+          {snippet ? <p className="truncate text-ui-sm text-foreground">{snippet}</p> : null}
           {showError ? <p className="truncate text-ui-sm text-danger">{run?.error}</p> : null}
           {blockerLabels.length > 0 ? (
             <p className="truncate text-ui-xs text-warning">
