@@ -2,6 +2,12 @@
 
 本文件记录基于上游 ZCode（zai-org/ZCode）的自定义改动。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased] - 2026-10-11
+
+### 文档与工程
+
+- **合并上游 v3.15.1**（zai-org/ZCode aac47556，UI 插件与内联 Gen UI、远控手机壳布局、ACP 任务索引迁移、marketing-touch 服务等）。冲突解决口径：上游结构为主干（WorkspaceShellLayout 重排、node.ts 服务注册内联、startupWorkspace settingsFile 自读），我方增量确定性重放（db-board/paperclip 面板分支与侧栏入口、db_board MCP 注入 resolver、custom-resources 分组收口数组、预热最近 3 项目行为）；taskIndexRepo 采纳 ACP 迁移、剔除上游已由 custom-resources 取代的 sqlite 分组代码。合并后 dbBoard 单测 58+6 全过、全仓 typecheck 0 错误、改动面 lint 0 告警、真实库功能验证（连接/概览恢复/严格模式绑定/HJT 数据面与助手）全通过。
+
 ## [Unreleased] - 2026-09-30
 
 基线：上游 `3bb1dd9`（v3.14.3）。

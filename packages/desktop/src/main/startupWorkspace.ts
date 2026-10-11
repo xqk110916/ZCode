@@ -1,8 +1,9 @@
 import { constants } from "node:fs";
-import { access, mkdir, stat } from "node:fs/promises";
+import { access, mkdir, readFile, stat } from "node:fs/promises";
 import {
+  appSettingsSchema,
+  formatZodError,
   resolveStartupLocalWorkspaceSessionIndex,
-  type AppSettings,
   type WorkspacePurpose,
 } from "@zcode/shared";
 
@@ -11,18 +12,35 @@ interface StartupWorkspaceLogger {
   warn?: (...args: unknown[]) => void;
 }
 
-/** 启动早期读取的项目会话状态（custom-resources.sqlite），见 customResourceProjectSessionReader。 */
-export type StartupProjectSession = Pick<
-  AppSettings,
-  "lastWorkspaceSession" | "lastActiveTabIndex" | "recentProjects"
->;
+async function readStartupSettings(settingsFile: string, logger?: StartupWorkspaceLogger) {
+  try {
+    const raw = await readFile(settingsFile, "utf-8");
+    const parsed = JSON.parse(raw);
+    const result = appSettingsSchema.safeParse(parsed);
+
+    if (!result.success) {
+      logger?.warn?.(
+        "[startup-workspace] invalid settings file, falling back to default workspace:",
+        formatZodError(result.error),
+      );
+      return appSettingsSchema.parse({});
+    }
+
+    return result.data;
+  } catch {
+    return appSettingsSchema.parse({});
+  }
+}
 
 export interface StartupWorkspaceWarmupTarget {
   workspacePath: string;
   workspaceIdentity?: string;
 }
 
-const STARTUP_AGENT_WARMUP_LIMIT = 3;
+// 修复原因：会话 CLI 没有 idle 回收，启动预热 3 个会让每个窗口常驻 3 份 Agent 进程内存；
+// 切到最近项目的冷启动收益抵不上常驻成本，收敛为只预热 active workspace。
+// 与 @zcode/protocol 的 init-local `agentWarmupTargets.max(1)` 保持一致。
+export const STARTUP_AGENT_WARMUP_LIMIT = 3;
 
 export interface StartupWindowBootstrap {
   restoreSession?: boolean;
@@ -46,7 +64,7 @@ async function isAvailableWorkspaceDirectory(workspacePath: string): Promise<boo
 }
 
 function resolvePersistedActiveSession(
-  sessions: NonNullable<StartupProjectSession["lastWorkspaceSession"]>,
+  sessions: NonNullable<ReturnType<typeof appSettingsSchema.parse>["lastWorkspaceSession"]>,
   lastActiveTabIndex: number | undefined,
 ) {
   if (sessions.length === 0) {
@@ -56,13 +74,13 @@ function resolvePersistedActiveSession(
   return sessions[activeIndex];
 }
 
-function resolveStartupAgentWarmupTargets(
-  projectSession: StartupProjectSession,
+export function resolveStartupAgentWarmupTargets(
+  settings: Pick<ReturnType<typeof appSettingsSchema.parse>, "recentProjects">,
   activeTarget: StartupWorkspaceWarmupTarget,
 ): StartupWorkspaceWarmupTarget[] {
   const candidates: StartupWorkspaceWarmupTarget[] = [
     activeTarget,
-    ...(projectSession.recentProjects ?? []).map((workspacePath) => ({
+    ...(settings.recentProjects ?? []).map((workspacePath) => ({
       workspacePath,
     })),
   ];
@@ -93,20 +111,21 @@ export function createOpenWorkspaceStartupBootstrap(workspacePath: string): Star
 }
 
 export async function resolveStartupWindowBootstrap({
-  projectSession,
+  settingsFile,
   conversationWorkspaceDir,
   logger,
 }: {
-  projectSession: StartupProjectSession;
+  settingsFile: string;
   conversationWorkspaceDir: string;
   logger?: StartupWorkspaceLogger;
 }): Promise<StartupWindowBootstrap> {
-  const sessions = projectSession.lastWorkspaceSession ?? [];
+  const settings = await readStartupSettings(settingsFile, logger);
+  const sessions = settings.lastWorkspaceSession ?? [];
 
   if (sessions.length > 0) {
     const persistedActiveSession = resolvePersistedActiveSession(
       sessions,
-      projectSession.lastActiveTabIndex,
+      settings.lastActiveTabIndex,
     );
     const unavailableWorkspacePath =
       persistedActiveSession?.kind === "local" &&
@@ -124,15 +143,15 @@ export async function resolveStartupWindowBootstrap({
     }
     const localActiveSessionIndex = resolveStartupLocalWorkspaceSessionIndex(
       sessions,
-      projectSession.lastActiveTabIndex,
+      settings.lastActiveTabIndex,
     );
     const activeSession =
       localActiveSessionIndex == null ? undefined : sessions[localActiveSessionIndex];
     if (activeSession?.kind === "local") {
-      // 被动 sessions-index 全量恢复不能再启动全部 workspace，但只预热当前一个又让
-      // 用户在最近项目间切换重新承担完整冷启动。Main 在唯一启动边界固定选出最近 3 个，
-      // Host 仍走原 initializeWorkspace 路径；失败不继续扫描第 4 个补位。
-      const agentWarmupTargets = resolveStartupAgentWarmupTargets(projectSession, {
+      // 被动 sessions-index 全量恢复不能启动全部 workspace；Main 在唯一启动边界固定只选
+      // active workspace（STARTUP_AGENT_WARMUP_LIMIT），Host 走原 initializeWorkspace 路径；
+      // recentProjects 保持 dormant，预热失败也不扫描其它 workspace 补位。
+      const agentWarmupTargets = resolveStartupAgentWarmupTargets(settings, {
         workspacePath: activeSession.workspacePath,
       });
       return {
@@ -152,4 +171,22 @@ export async function resolveStartupWindowBootstrap({
     initialWorkspacePurpose: "conversation",
     agentWarmupTargets: [{ workspacePath: conversationWorkspaceDir }],
   };
+}
+
+export async function resolveStartupWorkspacePath({
+  settingsFile,
+  conversationWorkspaceDir,
+  logger,
+}: {
+  settingsFile: string;
+  conversationWorkspaceDir: string;
+  logger?: StartupWorkspaceLogger;
+}): Promise<string | undefined> {
+  return (
+    await resolveStartupWindowBootstrap({
+      settingsFile,
+      conversationWorkspaceDir,
+      logger,
+    })
+  ).initialWorkspacePath;
 }
