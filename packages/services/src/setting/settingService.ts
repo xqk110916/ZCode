@@ -33,7 +33,6 @@ import {
   retainLegacyAccountConnectionFields,
   type LegacyTeamConnection,
 } from "#src/setting/legacyAccountConnectionSettings.js";
-const MAX_RECENT_PROJECTS = 10;
 const DEFAULT_PROJECT_NAME = "ZCodeProject";
 const SETTINGS_PARSE_RETRY_DELAY_MS = 300;
 const SETTINGS_PARSE_RETRY_COUNT = 3;
@@ -49,8 +48,7 @@ const debugLog = (...args: unknown[]) => {
 };
 
 function resolveUserHomeDir() {
-  // 独立桌面 Dev 实例已设置自己的 home，设置服务却仍写真实 HOME，
-  // 导致启动迁移和外观操作污染其他实例。与 Electron 的显式 home 覆盖保持一致。
+  // 独立桌面 Dev 实例已设置自己的 home；与 Electron 的显式 home 覆盖一致，避免污染其他实例。
   const envHome =
     process.env.ZCODE_DESKTOP_HOME_DIR?.trim() ||
     process.env.HOME?.trim() ||
@@ -78,8 +76,7 @@ function buildCorruptSettingsBackupPath(settingsFile: string): string {
 async function quarantineCorruptSettingsFile(settingsFile: string, error: unknown): Promise<void> {
   const backupPath = buildCorruptSettingsBackupPath(settingsFile);
   try {
-    // 用户手动编辑或远端磁盘异常可能把 setting.json 写成非 JSON（例如 ":wq"）。
-    // 如果只返回默认值不隔离坏文件，每次启动都会重复解析失败；这里保留备份后让后续 update 重建合法配置。
+    // 坏 setting.json 保留备份后隔离，让后续 update 重建合法配置，避免每次启动重复解析失败。
     maybeThrowInjectedFsFault({ operation: "rename", path: settingsFile });
     await rename(settingsFile, backupPath);
     log("invalid settings json backed up:", backupPath, "error:", error);
@@ -90,8 +87,7 @@ async function quarantineCorruptSettingsFile(settingsFile: string, error: unknow
       "code" in renameError &&
       (renameError as { code?: string }).code === "ENOENT"
     ) {
-      // 启动时多个服务可能同时读取同一个坏 setting.json。
-      // 第一个读取已经完成隔离后，后续读取再 rename 会遇到 ENOENT；这是并发下的预期结果，不应当按备份失败刷错误日志。
+      // 并发读取下首个读取已隔离坏文件，后续 rename 遇 ENOENT 是预期结果，不按失败刷错误。
       log("invalid settings json already quarantined by another reader, returning defaults");
       return;
     }
@@ -122,8 +118,7 @@ interface ReadSettingsResult {
 async function readSettingsWithMeta(): Promise<ReadSettingsResult> {
   const settingsFile = getSettingsFile();
   try {
-    // settingService.get() 会被 UI 和远程会话高频调用。
-    // 之前每次读取都把完整配置写入生产日志，导致日志暴涨且暴露路径/配置细节；普通读取只保留开发态 debug。
+    // get() 高频调用，普通读取只保留开发态 debug，避免生产日志暴涨且暴露配置细节。
     debugLog("reading settings from:", settingsFile);
     const raw = await readFile(settingsFile, "utf-8");
     let rawValue: unknown;
@@ -131,8 +126,7 @@ async function readSettingsWithMeta(): Promise<ReadSettingsResult> {
       rawValue = JSON.parse(raw);
     } catch (parseError) {
       let lastParseError: unknown = parseError;
-      // setting.json 可能正被另一次 update 覆盖写入，读者会短暂读到半截 JSON。
-      // 先做短重试，只有连续失败才按坏文件隔离，避免把正常会话配置误清成默认值。
+      // setting.json 可能正被另一次 update 覆盖写入（短暂半截 JSON）；先短重试，连续失败才隔离。
       for (let retryAttempt = 1; retryAttempt <= SETTINGS_PARSE_RETRY_COUNT; retryAttempt += 1) {
         await delay(SETTINGS_PARSE_RETRY_DELAY_MS);
         try {
@@ -211,8 +205,7 @@ async function writeSettings(
   maybeThrowInjectedFsFault({ operation: "writeFile", path: settingsFile });
   const raw = await readLegacyAccountConnectionSettingsFile(settingsFile);
   const rollbackFields = retainLegacyAccountConnectionFields(raw);
-  // 项目会话三字段改存 custom-resources.sqlite（specs/services/custom-resource-store.md）；
-  // setting.json 不再持久化这三个 key，旧文件里的值视为废弃。
+  // 项目三字段改存 custom-resources.sqlite；setting.json 不再持久化这三个 key，旧值废弃。
   const persisted = { ...rollbackFields, ...stripProjectSessionFields(settings) };
   // 旧 Team 尚待 OAuth 补组织时，schema 的默认 {} 不是用户的新选择。
   // 普通偏好保存必须保留新字段缺席；只有迁移提交或用户显式选连接才结束旧导入。
@@ -282,10 +275,9 @@ export function createSettingServiceWithMigrations(): {
     await queued;
   };
 
-  // 项目会话三字段（lastWorkspaceSession / recentProjects / lastActiveTabIndex）改存
-  // custom-resources.sqlite；见 specs/services/custom-resource-store.md。
+  // 项目会话三字段改存 custom-resources.sqlite（specs/services/custom-resource-store.md）。
   const projectSessionStore = new ProjectSessionStore();
-  const { readProjectSessionOverlay, applyProjectSessionOverlay } =
+  const { applyProjectSessionOverlay, mergeProjectSessionPatch } =
     createProjectSessionRouting(projectSessionStore);
 
   const service: ISettingService = {
@@ -304,8 +296,7 @@ export function createSettingServiceWithMigrations(): {
           return;
         }
 
-        // 初始化原因：旧版设置可能已把无法区分来源的默认值落盘；升级后按 schema 统一迁移一次。
-        // 迁移写盘必须进入 updateQueue，并在队列内重读最新文件，避免覆盖并发保存的其他设置。
+        // 旧版可能已把默认值落盘，升级后统一迁移一次；在队列内重读最新，避免覆盖并发保存。
         await writeSettings(latest.settings, shouldCommit, runSettingsCommit, enterCommitPhase);
       });
 
@@ -330,27 +321,8 @@ export function createSettingServiceWithMigrations(): {
             throw new Error("Account connection settings changed");
           }
         }
-        const merged = appSettingsSchema.parse({
-          ...current,
-          ...filePatch,
-        });
-
-        // 打开工作区后会几乎同时写 recentProjects 和 lastWorkspaceSession。
-        // 之前两个 update 都是基于各自读到的旧 settings 直接覆盖写回，
-        // 后写入的补丁会把前一个字段整块抹掉，导致下次启动恢复不到会话。
-        // 写入串行化保持不变：文件字段与项目字段各自在队列内基于最新落盘状态合并，
-        // recentProjects 的去重上限逻辑随项目字段一起落到 KV。
-        const mergedProjectSession = appSettingsPatchSchema.parse({
-          ...(await readProjectSessionOverlay()),
-          ...projectSessionPatch,
-        });
-        if (mergedProjectSession.recentProjects) {
-          mergedProjectSession.recentProjects = [...new Set(mergedProjectSession.recentProjects)].slice(
-            0,
-            MAX_RECENT_PROJECTS,
-          );
-        }
-
+        const merged = appSettingsSchema.parse({ ...current, ...filePatch });
+        const mergedProjectSession = await mergeProjectSessionPatch(projectSessionPatch);
         if (Object.keys(filePatch).length > 0) {
           await writeSettings(
             merged,
@@ -364,7 +336,6 @@ export function createSettingServiceWithMigrations(): {
           await projectSessionStore.write(mergedProjectSession);
         }
       };
-
       await enqueueSettingsWrite(runUpdate);
     },
 
@@ -373,8 +344,7 @@ export function createSettingServiceWithMigrations(): {
       const targetBaseDir = newDir?.trim() || homedir();
       const validation = validateDataBaseDirTarget(targetBaseDir);
       if (!validation.ok) {
-        // Windows 安装目录由安装器/自动更新管理，把 .zcode/v2 放进去可能在升级时被覆盖。
-        // 迁移前在 service 层拦截，避免 UI 入口变化或 RPC 调用绕过前端判断。
+        // Windows 安装目录由安装器管理，.zcode/v2 放进去可能在升级时被覆盖；service 层统一拦截。
         const error = new Error(`${validation.code}: ${validation.forbiddenDir}`);
         (error as Error & { code: string }).code = validation.code;
         throw error;
