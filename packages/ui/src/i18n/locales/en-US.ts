@@ -7569,13 +7569,21 @@ const enUS: Record<string, string> = {
     "Starts an assistant chat session (read-only first, writes need confirmation, no delete).",
   "dbboard.agent.send": "Start Chat",
   "dbboard.agent.error": "Failed to create session: {message}",
-  "dbboard.binding.pin": "Bind current connection to this project",
+  "dbboard.binding.pin": "Choose a connection and project to bind",
   "dbboard.binding.unpin":
     "Unbind this project (all projects regain access once every binding is cleared)",
-  "dbboard.binding.confirmTitle": "Bind the database connection to this project?",
+  "dbboard.binding.confirmTitle": "Bind database connection",
   "dbboard.binding.confirmDescription":
-    'Bind "{connection}" to project {workspace}. Once enabled, only projects with a bound connection can use the database board and the DB assistant; other projects need their own binding.',
-  "dbboard.binding.bindAction": "Bind to this project",
+    'Once bound, sessions in the target project can use the database board and the DB assistant; other projects need their own binding.',
+  "dbboard.binding.connectionLabel": "Connection",
+  "dbboard.binding.workspaceLabel": "Target project",
+  "dbboard.binding.currentWorkspaceOption": "{workspace} (current)",
+  "dbboard.binding.bindAction": "Bind",
+  "dbboard.binding.openAction": "Bind connection…",
+  "dbboard.binding.boundNotice":
+    "Connection bound to project {workspace}. Open the database board in that project to use it.",
+  "dbboard.binding.boundProjects": "Projects with a bound connection: {projects}",
+  "dbboard.binding.boundProjectsMore": "Projects with a bound connection: {projects} and {count} more",
   "dbboard.binding.blockedTitle": "This project has no database connection bound",
   "dbboard.binding.blockedDescription":
     "Workspace binding is enabled: only projects with a bound connection can use the database board and the DB assistant. Bind a connection to this project to get access.",

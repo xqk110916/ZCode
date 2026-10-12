@@ -2,6 +2,20 @@
 
 本文件记录基于上游 ZCode（zai-org/ZCode）的自定义改动。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased] - 2026-10-12
+
+### 新增
+
+#### 数据库看板 · 绑定目标项目可选
+
+- 绑定不再限于「当前项目」：页头 Pin 与 blocked 空态的「绑定连接…」打开同一个绑定对话框，内含连接 + 目标项目双选择器——目标项目选项为当前项目置顶 + 最近项目（`recentProjects`，按服务端同款键归一化去重），默认当前项目；`setBinding` 支持显式 `targetWorkspaceKey`（缺省仍绑当前工作区）。在任意项目里即可把连接绑到其他项目，无需切换工作区。
+- 绑定到非当前项目时出现绿色成功回执（此前当前视图无任何变化，表现得像「没反应」）；blocked 空态新增「已绑定连接的项目」清单（hover 展示完整绑定键）并补渲染错误横幅（此前该分支连失败都不显示）。
+- blocked 空态拆分为 `DbBoardBlockedState` 独立组件；行为规范 `specs/services/db-board.md` 同步；i18n zh-CN / en-US。
+
+### 文档与工程
+
+- AGENTS.md 新增「Agent CLI 重建与 coding-plan 401 过渡方案」：合并上游后 CLI 必须 turbo 全量重建（单包构建会内联过期的 `packages/*/dist/` 旧产物）；web 任务必现 `auth_failed 401` 的根因为官方二进制对 coding-plan 端点新增客户端请求签名（约 2026-10-10 起网关强制校验，开源 v3.15.1 尚未包含），dev server 过渡方案为 `ZCODE_AGENT_SERVER_COMMAND(_ARGS_JSON)` 拉起官方桌面端 CLI，含切回条件。
+
 ## [Unreleased] - 2026-10-11
 
 ### 新增

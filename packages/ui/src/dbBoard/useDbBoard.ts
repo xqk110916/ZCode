@@ -12,6 +12,7 @@ import { useDbBoardConnections } from "@/dbBoard/useDbBoardConnections.js";
 import { useDbBoardUsageSummary } from "@/dbBoard/useDbBoardUsageSummary.js";
 import type { UseDbBoardUsageSummaryState } from "@/dbBoard/useDbBoardUsageSummary.js";
 import type {
+  DbBoardBindingsInfo,
   DbBoardColumnMeta,
   DbBoardConnectionConfig,
   DbBoardConnectionEntry,
@@ -34,8 +35,13 @@ export interface UseDbBoardState {
   connections: DbBoardConnectionEntry[];
   loadConnections: () => Promise<void>;
   setActiveConnection: (id: string) => Promise<boolean>;
-  /** 工作区绑定（null = 解绑；严格模式下未绑定工作区不可用）。 */
-  setBinding: (connectionId: string | null) => Promise<boolean>;
+  /**
+   * 工作区绑定（null = 解绑；严格模式下未绑定工作区不可用）。
+   * targetWorkspaceKey 缺省绑当前工作区；绑定对话框选择「最近项目」时显式传入目标 key。
+   */
+  setBinding: (connectionId: string | null, targetWorkspaceKey?: string) => Promise<boolean>;
+  /** 全量工作区绑定（blocked 空态展示「已绑定项目」清单；管理面数据不受门控）。 */
+  bindingsInfo: DbBoardBindingsInfo | null;
   deleteConnection: (id: string) => Promise<boolean>;
   saveConnection: (
     entry: DbBoardConnectionEntry,

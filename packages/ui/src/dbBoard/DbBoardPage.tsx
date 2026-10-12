@@ -3,19 +3,8 @@
  * 与 PaperclipPage 同构：纯投影，数据来自 useDbBoard / useDbBoardDashboards。
  */
 import { useMemo, useState } from "react";
-import { DatabaseZap, Pin, Plug, PlugZap, Plus } from "lucide-react";
+import { Pin, Plug, PlugZap, Plus } from "lucide-react";
 import type { DbBoardConnectionEntry } from "@zcode/services";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog.js";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
@@ -28,8 +17,18 @@ import {
 } from "@/components/ui/select.js";
 import { Spinner } from "@/components/ui/spinner.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs.js";
+import { useRecentProjects } from "@/hooks/useSettingService.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { DbBoardAgentChatEntry } from "@/dbBoard/DbBoardAgentChatEntry.js";
+import {
+  connectionLabel,
+  DbBoardBindDialog,
+  DbBoardInlineNotice,
+  workspaceDisplayName,
+  workspaceOptionKey,
+  type DbBoardWorkspaceOption,
+} from "@/dbBoard/DbBoardBindDialog.js";
+import { DbBoardBlockedState } from "@/dbBoard/DbBoardBlockedState.js";
 import { DbBoardConnectionDialog } from "@/dbBoard/DbBoardConnectionDialog.js";
 import { DbBoardKnowledgeSummary } from "@/dbBoard/DbBoardKnowledgeSummary.js";
 import { DbBoardDataTab } from "@/dbBoard/DbBoardDataTab.js";
@@ -42,11 +41,6 @@ import { useDbBoardKnowledge } from "@/dbBoard/useDbBoardKnowledge.js";
 
 const TAB_TRIGGER_CLASS =
   "h-8 flex-none rounded-full px-3 hover:bg-hover data-active:!bg-selected data-active:hover:!bg-hover after:hidden";
-
-function connectionLabel(entry: DbBoardConnectionEntry): string {
-  const label = entry.name?.trim() || `${entry.host}/${entry.database}`;
-  return entry.env?.trim() ? `${label}（${entry.env.trim()}）` : label;
-}
 
 export function DbBoardPage(props: {
   operator: string;
@@ -65,8 +59,11 @@ export function DbBoardPage(props: {
   const [connectionOpen, setConnectionOpen] = useState(false);
   /** null = 新建连接；否则编辑该连接。 */
   const [editingConnection, setEditingConnection] = useState<DbBoardConnectionEntry | null>(null);
-  /** blocked 空态里选择要绑定到本项目的连接 id。 */
-  const [bindTargetId, setBindTargetId] = useState<string | null>(null);
+  /** 绑定对话框开关（页头 Pin 与 blocked 空态共用）。 */
+  const [bindOpen, setBindOpen] = useState(false);
+  /** 绑定到非当前项目的成功回执；绑当前项目时视图自身变化即反馈，不设通知。 */
+  const [bindNotice, setBindNotice] = useState<string | null>(null);
+  const { recentProjects } = useRecentProjects();
 
   const service = dbBoard.connection;
   const activeEntry = useMemo(() => {
@@ -85,6 +82,31 @@ export function DbBoardPage(props: {
   const selectEntries =
     dbBoard.connections.length > 0 ? dbBoard.connections : activeEntry ? [activeEntry] : [];
 
+  // 绑定目标：当前项目置顶，最近项目按服务端同款归一化去重后追加。
+  const workspaceOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: DbBoardWorkspaceOption[] = [];
+    if (workspaceKey) {
+      options.push({ key: workspaceKey, isCurrent: true });
+      seen.add(workspaceOptionKey(workspaceKey));
+    }
+    for (const path of recentProjects) {
+      const trimmed = path.trim();
+      if (!trimmed || seen.has(workspaceOptionKey(trimmed))) continue;
+      seen.add(workspaceOptionKey(trimmed));
+      options.push({ key: trimmed, isCurrent: false });
+    }
+    return options;
+  }, [workspaceKey, recentProjects]);
+
+  // blocked 空态的「已绑定项目」清单（排除当前项目；blocked 时当前必不在绑定表内，防御性排除）。
+  const boundOtherProjects = useMemo(() => {
+    const current = workspaceKey ? workspaceOptionKey(workspaceKey) : null;
+    return Object.keys(dbBoard.bindingsInfo?.bindings ?? {})
+      .filter((key) => workspaceOptionKey(key) !== current)
+      .map(workspaceDisplayName);
+  }, [dbBoard.bindingsInfo, workspaceKey]);
+
   const stateLabel =
     service?.state === "connected"
       ? intl.formatMessage({ id: "dbboard.connection.connected" })
@@ -102,6 +124,32 @@ export function DbBoardPage(props: {
     setConnectionOpen(true);
   };
 
+  // blocked 空态与页头 Pin 共用：条件挂载让每次打开都以激活连接 + 当前项目为默认值。
+  const bindDialog =
+    bindOpen && selectEntries.length > 0 ? (
+      <DbBoardBindDialog
+        connections={selectEntries}
+        defaultConnectionId={service?.activeConnectionId ?? selectEntries[0]!.id}
+        workspaceOptions={workspaceOptions}
+        onBind={(connectionId, targetWorkspaceKey) => {
+          setBindOpen(false);
+          setBindNotice(null);
+          void dbBoard.setBinding(connectionId, targetWorkspaceKey).then((ok) => {
+            // 绑到非当前项目时当前视图不变（仍 blocked），需要明确回执，否则看起来"没反应"。
+            if (ok && workspaceOptionKey(targetWorkspaceKey) !== workspaceOptionKey(workspaceKey)) {
+              setBindNotice(
+                intl.formatMessage(
+                  { id: "dbboard.binding.boundNotice" },
+                  { workspace: targetWorkspaceKey },
+                ),
+              );
+            }
+          });
+        }}
+        onClose={() => setBindOpen(false)}
+      />
+    ) : null;
+
   if (!dbBoard.serviceAvailable) {
     return (
       <div className="flex flex-1 items-center justify-center rounded-xl border border-card-border bg-card text-ui-sm text-foreground-subtle">
@@ -113,51 +161,30 @@ export function DbBoardPage(props: {
   const access = service?.workspaceAccess ?? "legacy";
   if (access === "blocked") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-card-border bg-card px-6 py-10 text-center">
-        <DatabaseZap className="size-6 text-foreground-subtle" />
-        <span className="text-ui-base font-medium text-foreground">
-          {intl.formatMessage({ id: "dbboard.binding.blockedTitle" })}
-        </span>
-        <p className="max-w-md text-ui-sm text-foreground-subtle">
-          {intl.formatMessage({ id: "dbboard.binding.blockedDescription" })}
-        </p>
-        {dbBoard.connections.length > 0 ? (
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <Select
-              value={bindTargetId ?? dbBoard.connections[0]!.id}
-              onValueChange={setBindTargetId}
-            >
-              <SelectTrigger size="sm" className="w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {dbBoard.connections.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    {connectionLabel(entry)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              size="sm"
-              onClick={() => void dbBoard.setBinding(bindTargetId ?? dbBoard.connections[0]!.id)}
-            >
-              <Pin />
-              {intl.formatMessage({ id: "dbboard.binding.bindAction" })}
-            </Button>
-          </div>
-        ) : (
-          <Button variant="outline" size="sm" onClick={openCreate}>
-            <Plus />
-            {intl.formatMessage({ id: "dbboard.connection.new" })}
-          </Button>
-        )}
-      </div>
+      <DbBoardBlockedState
+        hasConnections={dbBoard.connections.length > 0}
+        boundOtherProjects={boundOtherProjects}
+        boundKeysTooltip={Object.keys(dbBoard.bindingsInfo?.bindings ?? {}).join("\n")}
+        actionError={dbBoard.actionError}
+        onClearActionError={dbBoard.clearActionError}
+        bindNotice={bindNotice}
+        onClearBindNotice={() => setBindNotice(null)}
+        onOpenBindDialog={() => setBindOpen(true)}
+        onCreateConnection={openCreate}
+        bindDialog={bindDialog}
+      />
     );
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {bindNotice ? (
+        <DbBoardInlineNotice
+          tone="success"
+          message={bindNotice}
+          onClose={() => setBindNotice(null)}
+        />
+      ) : null}
       <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
           <TabsList variant="line" className="h-8 gap-1 p-0">
@@ -215,50 +242,14 @@ export function DbBoardPage(props: {
                 <Pin />
               </Button>
             ) : selectEntries.length > 0 ? (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    title={intl.formatMessage({ id: "dbboard.binding.pin" })}
-                  >
-                    <Pin />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      {intl.formatMessage({ id: "dbboard.binding.confirmTitle" })}
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {intl.formatMessage(
-                        { id: "dbboard.binding.confirmDescription" },
-                        {
-                          connection: connectionLabel(
-                            selectEntries.find(
-                              (entry) =>
-                                entry.id === (service?.activeConnectionId ?? selectEntries[0]!.id),
-                            ) ?? selectEntries[0]!,
-                          ),
-                          workspace: workspaceKey,
-                        },
-                      )}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>
-                      {intl.formatMessage({ id: "common.cancel" })}
-                    </AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() =>
-                        void dbBoard.setBinding(service?.activeConnectionId ?? selectEntries[0]!.id)
-                      }
-                    >
-                      {intl.formatMessage({ id: "dbboard.binding.bindAction" })}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                title={intl.formatMessage({ id: "dbboard.binding.pin" })}
+                onClick={() => setBindOpen(true)}
+              >
+                <Pin />
+              </Button>
             ) : null}
             <Badge
               variant="outline"
@@ -360,6 +351,7 @@ export function DbBoardPage(props: {
         onSave={dbBoard.saveConnection}
         onTest={dbBoard.testConnection}
       />
+      {bindDialog}
     </div>
   );
 }

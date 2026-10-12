@@ -53,7 +53,7 @@
   - 数据浏览：`queryRows({schema, table, page, pageSize, searchColumn?, searchValue?})` / `insertRow({schema, table, values, operator})` / `updateRow({schema, table, pk, values, operator})` / `listOpLogs({schema?, table?, page, pageSize})` / `rollback({logId, operator})`
   - 探索看板：`generateDashboard({question, previousSpec?, locale?})` / `runDashboardSql({sql})` / `explainQuery({sql, chartTitle, question?})` / `listDashboards()` / `saveDashboard(spec)` / `deleteDashboardDefinition(id)`
 - Dashboard spec：`{ id, title, question, charts: [{ id, title, type: bar|line|pie|kpi|table, sql, description, columnHints? }], revisionHistory: string[], updatedAt }`，zod 校验。
-- UI：`packages/ui/src/dbBoard/`（页面与子组件、`useDbBoard` / `useDbBoardDashboards` hooks）；主视图 `WorkspaceMainView = "db-board"`；侧边栏入口沿用 paperclip 模式。页头为 line tabs + 连接条（无重复大标题）；数据浏览表列表两行（表名 + 中文用途）；操作日志筛选进面板头，tab 不再单独放提示行。
+- UI：`packages/ui/src/dbBoard/`（页面与子组件、`useDbBoard` / `useDbBoardDashboards` hooks）；主视图 `WorkspaceMainView = "db-board"`；侧边栏入口沿用 paperclip 模式。页头为 line tabs + 连接条（无重复大标题）；数据浏览表列表两行（表名 + 中文用途）；操作日志筛选进面板头，tab 不再单独放提示行。绑定不限于「当前项目」：页头 Pin 与 blocked 空态打开同一个绑定对话框，内含连接选择器与**目标项目选择器**（选项 = 当前项目 + `settings.recentProjects` 去重，按服务端同款归一化去重；默认当前项目），`setBinding` hook 透传显式 `targetWorkspaceKey`，绑定成功后立即生效（目标项目下次进入看板即解锁；绑定管理面本就不受数据面门控）。
 - 生成链路：复用 `zcodeAgentService.generateWorkspaceText`（workspace 取 `getConversationWorkspaceDir()`），模型取 `providerRuntime.modelSelection.getView().preferredSelection`，无选中模型明确报错；querySource `db_board_dashboard`。
 - 日志：`createServiceLogger("dbBoard")`，info 记录连接/增改/回退/生成生命周期，密码等凭据不落日志。
 

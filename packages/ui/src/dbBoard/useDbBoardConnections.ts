@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  DbBoardBindingsInfo,
   DbBoardConnectionConfig,
   DbBoardConnectionEntry,
   DbBoardConnectionSnapshot,
@@ -21,8 +22,16 @@ export interface UseDbBoardConnectionsState {
   connections: DbBoardConnectionEntry[];
   loadConnections: () => Promise<void>;
   setActiveConnection: (id: string) => Promise<boolean>;
-  /** 工作区绑定（null = 解绑；严格模式下未绑定工作区不可用）。 */
-  setBinding: (connectionId: string | null) => Promise<boolean>;
+  /**
+   * 工作区绑定（null = 解绑；严格模式下未绑定工作区不可用）。
+   * targetWorkspaceKey 缺省绑当前工作区；绑定对话框选择「最近项目」时显式传入目标 key。
+   */
+  setBinding: (connectionId: string | null, targetWorkspaceKey?: string) => Promise<boolean>;
+  /**
+   * 全量工作区绑定（blocked 空态展示「已绑定项目」清单）。
+   * 连接管理面数据，不受数据面门控，blocked 工作区也能读取。
+   */
+  bindingsInfo: DbBoardBindingsInfo | null;
   deleteConnection: (id: string) => Promise<boolean>;
   saveConnection: (
     entry: DbBoardConnectionEntry,
@@ -46,6 +55,7 @@ export function useDbBoardConnections(params: {
 
   const [connection, setConnection] = useState<DbBoardConnectionSnapshot | null>(null);
   const [connections, setConnections] = useState<DbBoardConnectionEntry[]>([]);
+  const [bindingsInfo, setBindingsInfo] = useState<DbBoardBindingsInfo | null>(null);
   /** 连接清单最新值（供 refreshConnection 对账，避免闭包读到旧列表）。 */
   const connectionsRef = useRef<DbBoardConnectionEntry[]>([]);
 
@@ -80,6 +90,15 @@ export function useDbBoardConnections(params: {
     }
   }, [dbBoardService]);
 
+  const loadBindings = useCallback(async () => {
+    if (!dbBoardService) return;
+    try {
+      setBindingsInfo(await dbBoardService.getBindings());
+    } catch (error) {
+      logger.warn("dbBoard getBindings failed", { error });
+    }
+  }, [dbBoardService]);
+
   // refreshConnection 对账时补拉清单，经 ref 解引用避免回调相互依赖。
   const loadConnectionsRef = useRef<(() => Promise<void>) | null>(null);
   loadConnectionsRef.current = loadConnections;
@@ -87,7 +106,8 @@ export function useDbBoardConnections(params: {
   useEffect(() => {
     void refreshConnection();
     void loadConnections();
-  }, [refreshConnection, loadConnections]);
+    void loadBindings();
+  }, [refreshConnection, loadConnections, loadBindings]);
 
   // 低频对账：服务重启/断连恢复后，挂载期失败的调用不会自动重发；快照对账 + 补拉清单
   // 让页头连接选择器、状态徽标与错误横幅在面板打开期间最终一致（getConnectionState 为内存态，开销可忽略）。
@@ -112,18 +132,20 @@ export function useDbBoardConnections(params: {
   );
 
   const setBinding = useCallback(
-    async (connectionId: string | null): Promise<boolean> => {
-      if (!dbBoardService || !workspaceKey) return false;
+    async (connectionId: string | null, targetWorkspaceKey?: string): Promise<boolean> => {
+      // 显式目标优先（绑定对话框选择的其他项目），缺省回落当前工作区。
+      const key = targetWorkspaceKey?.trim() || workspaceKey;
+      if (!dbBoardService || !key) return false;
       try {
-        await dbBoardService.setBinding({ workspaceKey, connectionId });
-        await Promise.all([loadConnections(), refreshConnection()]);
+        await dbBoardService.setBinding({ workspaceKey: key, connectionId });
+        await Promise.all([loadConnections(), refreshConnection(), loadBindings()]);
         return true;
       } catch (error) {
         onActionError(error instanceof Error ? error.message : String(error));
         return false;
       }
     },
-    [dbBoardService, workspaceKey, loadConnections, refreshConnection, onActionError],
+    [dbBoardService, workspaceKey, loadConnections, refreshConnection, loadBindings, onActionError],
   );
 
   const deleteConnection = useCallback(
@@ -172,6 +194,7 @@ export function useDbBoardConnections(params: {
     loadConnections,
     setActiveConnection,
     setBinding,
+    bindingsInfo,
     deleteConnection,
     saveConnection,
     testConnection,
