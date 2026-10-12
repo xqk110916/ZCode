@@ -379,6 +379,7 @@ import { IDbBoardKnowledgeService } from "./dbBoardKnowledge/dbBoardKnowledge.js
 import { createDbBoardKnowledgeService } from "./dbBoardKnowledge/dbBoardKnowledgeService.js";
 import { IDbBoardAgentService } from "./dbBoardAgent/dbBoardAgent.js";
 import { createDbBoardAgentService } from "./dbBoardAgent/dbBoardAgentService.js";
+import { createCodeGraphService } from "./dbBoardKnowledge/codeGraphService.js";
 import type { DbBoardKnowledge } from "./dbBoardKnowledge/dbBoardKnowledge.js";
 import { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
 import { createFileService } from "./file/fileService.js";
@@ -2485,10 +2486,14 @@ export function createLocalServices(options: {
   });
   dbBoardKnowledgeServiceRef = dbBoardKnowledgeService;
 
+  // 代码知识图谱：与知识库共享项目根目录，懒构建。
+  const codeGraphService = createCodeGraphService();
+
   // 数据库助手：MCP server 懒启动（首次面板对话时才监听 loopback 端口）。
   const dbBoardAgentService = createDbBoardAgentService({
     dbBoardService,
     dbBoardKnowledgeService,
+    codeGraphService,
   });
   dbBoardBindingsForSessionInjection = dbBoardService;
   dbBoardAgentForSessionInjection = dbBoardAgentService;

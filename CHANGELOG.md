@@ -4,6 +4,19 @@
 
 ## [Unreleased] - 2026-10-11
 
+### 新增
+
+#### 代码知识图谱（code-graph）
+
+- 全栈代码知识图谱：扫描前后端代码建立方法级知识图谱（1,483 类 / 5,953 方法 / 929 端点 / 6,316 前端 API 调用，HJT 实测）。
+- **硬编码检测**：自动识别写死的用户名/用户 ID/部门 ID/角色 ID/字典 ID/状态码/配置键（roma.js handleSelectData 的 jiyaosw/jiyao/chengyilin 全部命中）。
+- **影响范围分析**：trace_impact 工具沿调用链 BFS，返回「改了方法 X → 影响哪些前端页面 / API 端点 / 数据库表 / 硬编码依赖」。
+- **特殊情况标注**：自动检测代码中的「特殊处理」「TODO」「FIXME」「临时」注释（878 个，HJT 实测）。
+- **3 个 MCP 工具**：trace_impact / find_hardcoded / query_code_graph（挂载在数据库助手 agent 上，工具总数从 14 → 17）。
+- 单元测试 16 用例（提取器 / 影响分析 / 图搜索）全过。
+
+## [Unreleased] - 2026-10-11
+
 ### 文档与工程
 
 - **合并上游 v3.15.1**（zai-org/ZCode aac47556，UI 插件与内联 Gen UI、远控手机壳布局、ACP 任务索引迁移、marketing-touch 服务等）。冲突解决口径：上游结构为主干（WorkspaceShellLayout 重排、node.ts 服务注册内联、startupWorkspace settingsFile 自读），我方增量确定性重放（db-board/paperclip 面板分支与侧栏入口、db_board MCP 注入 resolver、custom-resources 分组收口数组、预热最近 3 项目行为）；taskIndexRepo 采纳 ACP 迁移、剔除上游已由 custom-resources 取代的 sqlite 分组代码。合并后 dbBoard 单测 58+6 全过、全仓 typecheck 0 错误、改动面 lint 0 告警、真实库功能验证（连接/概览恢复/严格模式绑定/HJT 数据面与助手）全通过。

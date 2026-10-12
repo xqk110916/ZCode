@@ -4,6 +4,10 @@ import { Readable } from "node:stream";
 import { createMcpHandler, Server } from "@modelcontextprotocol/server";
 import { createServiceLogger } from "../logger/serviceLogger.js";
 import { createDbBoardAgentTools, type DbBoardAgentToolContext } from "./dbBoardAgentTools.js";
+import {
+  createCodeGraphTools,
+  type CodeGraphToolContext,
+} from "./codeGraphTools.js";
 
 const logger = createServiceLogger("dbBoardAgent");
 
@@ -30,8 +34,13 @@ export interface DbBoardAgentMcpServerHost {
  * Bearer token 鉴权。工具处理器直接闭包引用既有 service 实例——连接池、知识库、看板 store、
  * 模型链路全系统只有宿主这一份所有者。
  */
-export function createDbBoardAgentMcpServerHost(toolContext: DbBoardAgentToolContext): DbBoardAgentMcpServerHost {
+export function createDbBoardAgentMcpServerHost(
+  toolContext: DbBoardAgentToolContext,
+  codeGraphToolContext?: CodeGraphToolContext,
+): DbBoardAgentMcpServerHost {
   const tools = createDbBoardAgentTools(toolContext);
+  const codeGraphTools = codeGraphToolContext ? createCodeGraphTools(codeGraphToolContext) : [];
+  const allTools = [...tools, ...codeGraphTools];
   // stateless：每个请求一个 fresh Server 实例（同一工具分发闭包），避免单实例多 transport 的状态串扰。
   const handler = createMcpHandler(() => {
     const server = new Server(
@@ -39,7 +48,7 @@ export function createDbBoardAgentMcpServerHost(toolContext: DbBoardAgentToolCon
       { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
     );
     server.setRequestHandler("tools/list", async () => ({
-      tools: tools.map((tool) => ({
+      tools: allTools.map((tool) => ({
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema,
@@ -47,7 +56,7 @@ export function createDbBoardAgentMcpServerHost(toolContext: DbBoardAgentToolCon
     }));
     server.setRequestHandler("tools/call", async (request) => {
       const name = request.params.name;
-      const tool = tools.find((candidate) => candidate.name === name);
+      const tool = allTools.find((candidate) => candidate.name === name);
       if (!tool) {
         return {
           content: [{ type: "text", text: `未知工具：${name}` }],

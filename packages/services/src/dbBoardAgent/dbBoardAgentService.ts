@@ -1,5 +1,6 @@
 import type { IDbBoardService, DbBoardConnectionState } from "../dbBoard/dbBoard.js";
 import type { IDbBoardKnowledgeService } from "../dbBoardKnowledge/dbBoardKnowledge.js";
+import type { ICodeGraphService } from "../dbBoardKnowledge/codeGraphService.js";
 import type { IDbBoardAgentService } from "./dbBoardAgent.js";
 import { createDbBoardAgentMcpServerHost } from "./dbBoardAgentMcpServer.js";
 import { workspaceBindingKey } from "../dbBoard/dbBoardBindings.js";
@@ -15,14 +16,18 @@ import { workspaceBindingKey } from "../dbBoard/dbBoardBindings.js";
 export function createDbBoardAgentService(options: {
   dbBoardService: IDbBoardService;
   dbBoardKnowledgeService: IDbBoardKnowledgeService;
+  codeGraphService?: ICodeGraphService;
 }): IDbBoardAgentService & { dispose(): void } {
-  const { dbBoardService, dbBoardKnowledgeService } = options;
+  const { dbBoardService, dbBoardKnowledgeService, codeGraphService } = options;
   let operatorUsername = "local";
-  const host = createDbBoardAgentMcpServerHost({
-    dbBoardService,
-    dbBoardKnowledgeService,
-    getOperatorUsername: () => operatorUsername,
-  });
+  const host = createDbBoardAgentMcpServerHost(
+    {
+      dbBoardService,
+      dbBoardKnowledgeService,
+      getOperatorUsername: () => operatorUsername,
+    },
+    codeGraphService ? { codeGraphService } : undefined,
+  );
 
   const connectionLabel = async (): Promise<string> => {
     const [snapshot, connections] = await Promise.all([
