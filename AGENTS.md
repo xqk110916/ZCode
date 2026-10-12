@@ -59,6 +59,30 @@
 - 后端环境与产品身份通过环境变量透传给打包脚本：生产后端、可与正式版并排安装的 Preview 包用 `ZCODE_ENV=production ZCODE_PREVIEW_IDENTITY=1`（隔离规则见 `specs/desktop/preview-flavor-shell-isolation.md`）。
 - 产物在 `packages/desktop/dist/`。如果 `out/` 或 `bundled-agents/` 与当前源码可能不一致（拿不准就视为不一致），退回全量打包，不要用 skip 参数打出混版包。
 
+### Agent CLI 重建与 coding-plan 401 过渡方案（2026-10-12）
+
+两件事分开记：
+
+**1. 重建命令**：合并上游或 `apps/zcode-cli` 依赖包源码有改动后，必须全量重建（单包构建会内联过期的 `packages/*/dist/` 旧产物）：
+
+```
+cd apps/zcode-cli && node ../../node_modules/.bin/turbo run build   # turbo 装在仓库根，约 6 分钟
+```
+
+**2. web 任务必现 `Turn execution failed auth_failed 401`（coding-plan 专属）**：根因是官方二进制 CLI（`E:\Zcode\resources\glm\zcode.cjs`，随桌面端自动更新）对 coding-plan 端点的模型请求增加了**客户端请求签名**（signingManager，带 keyCache/clientVersion），bigmodel 网关约 2026-10-10 起强制校验；开源仓库 v3.15.1 源码没有这套签名，源码构建的 CLI 全部被 401（桌面端正常是因为用官方二进制）。重建/杀进程都无效，已实测排除。
+
+**过渡方案（当前生效）**：dev server 用 `ZCODE_AGENT_SERVER_COMMAND` 拉起官方 CLI，绕过缺失的签名逻辑。启动 dev server 时带全套环境变量：
+
+```
+export ZCODE_DATA_BASE_DIR="D:/下载"
+export ZCODE_BUILTIN_PROVIDER_CONFIG_FILE="F:/testCode/ZCode/config/provider/zcode-builtin.json"
+export ZCODE_AGENT_SERVER_COMMAND="node"
+export ZCODE_AGENT_SERVER_ARGS_JSON='["E:/Zcode/resources/glm/zcode.cjs","app-server","--stdio"]'
+pnpm --filter @zcode/server dev
+```
+
+局限与切回条件：官方 CLI 路径依赖本机安装的 ZCode 桌面端（`E:\Zcode`）；等上游开源出包含请求签名的版本并合并后，去掉后两个变量重启 dev server 即可切回仓库 CLI。注意这个变量只对 dev server 进程生效，别持久化到用户环境（打包链不受影响）。
+
 ## 实现与验证
 
 - 代码改动使用 `.agents/skills/architecture-governance/SKILL.md`，先运行架构检查，再读取目标模块的受控上下文。
