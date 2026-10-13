@@ -3,7 +3,8 @@
  * 停止服务为破坏性操作：红色描边（outline destructive）提示危险，点击直接执行。
  * 从 PaperclipPage 拆出（保持主文件行数在 lint 上限内）。
  */
-import { CircleCheck, Loader2, Plus, RefreshCw, Square } from "lucide-react";
+import { ArrowUpCircle, CircleCheck, Loader2, Plus, RefreshCw, Square } from "lucide-react";
+import type { PaperclipLocalServerVersionInfo } from "@zcode/shared";
 import type { PaperclipConnectionState } from "@zcode/shared";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
@@ -15,7 +16,10 @@ export function PaperclipConnectionBar({
   serverUrl,
   refreshing,
   stoppingLocalServer,
+  versionInfo,
+  updatingLocalServer,
   onStopLocalServer,
+  onUpdateLocalServer,
   onRefresh,
   onCreateTask,
 }: {
@@ -23,7 +27,10 @@ export function PaperclipConnectionBar({
   serverUrl: string;
   refreshing: boolean;
   stoppingLocalServer: boolean;
+  versionInfo?: PaperclipLocalServerVersionInfo | null;
+  updatingLocalServer?: boolean;
   onStopLocalServer: () => void;
+  onUpdateLocalServer: () => void;
   onRefresh: () => void;
   onCreateTask: () => void;
 }) {
@@ -55,8 +62,50 @@ export function PaperclipConnectionBar({
           })}
         </Badge>
         <span className="truncate text-ui-base text-foreground-subtle">{serverUrl}</span>
+        {versionInfo?.installedVersion ? (
+          <Badge variant="outline" className="gap-1 text-ui-xs text-foreground-subtle">
+            v{versionInfo.installedVersion}
+          </Badge>
+        ) : null}
+        {versionInfo?.updateAvailable && versionInfo.latestVersion ? (
+          <Badge variant="outline" className="gap-1 border-warning/40 bg-warning-subtle text-warning text-ui-xs">
+            <ArrowUpCircle className="size-3" />
+            {intl.formatMessage(
+              { id: "paperclip.localServer.newVersion" },
+              { version: versionInfo.latestVersion },
+            )}
+          </Badge>
+        ) : null}
       </div>
       <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+        {versionInfo?.updateAvailable ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-ui-sm"
+            disabled={updatingLocalServer}
+            title={
+              versionInfo.latestVersion
+                ? intl.formatMessage(
+                    { id: "paperclip.localServer.updateTitle" },
+                    { version: versionInfo.latestVersion },
+                  )
+                : undefined
+            }
+            onClick={onUpdateLocalServer}
+          >
+            {updatingLocalServer ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <ArrowUpCircle className="size-4" />
+            )}
+            {intl.formatMessage({
+              id: updatingLocalServer
+                ? "paperclip.localServer.updating"
+                : "paperclip.localServer.update",
+            })}
+          </Button>
+        ) : null}
         <Button
           variant="outline"
           size="sm"

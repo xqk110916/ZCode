@@ -11,6 +11,7 @@ import type {
   PaperclipIssueFilter,
   PaperclipLocalAdapterCandidate,
   PaperclipLocalServerStatus,
+  PaperclipLocalServerVersionInfo,
   PaperclipIssueComment,
   PaperclipProject,
   PaperclipRunSnapshot,
@@ -127,7 +128,8 @@ export interface IPaperclipService {
   listIssueComments(issueId: string): Promise<PaperclipIssueComment[]>;
 
   /**
-   * 启动本机 Paperclip server（各平台原生 npx 运行，外置 PostgreSQL 服务承载数据库）。
+   * 启动本机 Paperclip server（固定安装目录 ~/.paperclip/server 的本地版本直启，
+   * 不经 npx 不联网；从未安装时先 npm install latest 一次性安装）。
    * 已在运行时幂等返回 running；启动期间轮询健康直到就绪（最长 300s）。
    */
   startLocalServer(): Promise<PaperclipLocalServerStatus>;
@@ -135,8 +137,21 @@ export interface IPaperclipService {
   /** 停止本机 Paperclip server（按命令模式匹配进程，含内嵌 PostgreSQL）；未运行时幂等。 */
   stopLocalServer(): Promise<PaperclipLocalServerStatus>;
 
-  /** 本机 server 进程状态（按健康探测合成）。 */
+  /** 本机 server 进程状态（按健康探测合成，携带已安装版本）。 */
   getLocalServerStatus(): Promise<PaperclipLocalServerStatus>;
+
+  /**
+   * 版本对比：本地已安装版本 vs registry 最新版（npm view，带 10min 缓存）。
+   * registry 查询失败时 latestVersion=null（静默降级）。UI 在启动成功后调用，
+   * updateAvailable=true 时显示更新标识。
+   */
+  checkLocalServerUpdate(): Promise<PaperclipLocalServerVersionInfo>;
+
+  /**
+   * 手动更新：npm install paperclipai@latest 到固定安装目录；更新前服务在运行则
+   * 重启到新版本，未运行则仅安装。失败返回 error（detail 带原因）。
+   */
+  updateLocalServer(): Promise<PaperclipLocalServerStatus>;
 
   /** 连接状态迁移（含 connected↔polling 的 WS 降级）。 */
   onDidChangeConnectionState: Event<PaperclipConnectionStateSnapshot>;

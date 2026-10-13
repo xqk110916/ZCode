@@ -72,33 +72,56 @@ agent 执行。本集成**不引入 Paperclip 的任何代码**，ZCode 仅作�
 | WS 连接与重连状态机 | `PaperclipService`（host/server 进程内） | 进程内存 |
 | UI 任务列表投影 | `PaperclipPage` 组件树 | React state，unmount 即弃 |
 
-## 本地服务生命周期（`startLocalServer` / `stopLocalServer` / `getLocalServerStatus`）
+## 本地服务生命周期（`startLocalServer` / `stopLocalServer` / `getLocalServerStatus` / `checkLocalServerUpdate` / `updateLocalServer`）
 
 - **所有者**：本机 Paperclip server 是独立进程；ZCode 只"发命令 + 健康探测"（`GET /api/health`，
   3s 超时）。多窗口/多宿主并发启动由"启动前先探 health"守卫幂等（已 running 直接返回）。
+- **固定本地安装目录**：`~/.paperclip/server`（`npm install --prefix` 产物，下称安装目录）。
+  **启动始终运行本地已安装版本**（`node <安装目录>/node_modules/paperclipai/dist/index.js run`，
+  不经 npx、不联网、秒起）；本地从未安装时才 `npm install paperclipai@latest --prefix <安装目录>`
+  （首装走网络，超时 8 分钟）。版本读取自安装目录 package.json 的 `version`（calver，如
+  2026.1012.0），按点分段数字比较（比较函数与探测/缓存位于 `paperclipLocalServerVersion.ts`）。
 - **平台默认策略（全平台原生运行，数据库一律外置 PostgreSQL，由系统服务承载）**：
-  - Windows：`npx.cmd -y paperclipai@latest run` 原生 detached 启动；数据库连接串持久化在
-    实例配置（`~/.paperclip/instances/default/config.json`），无需命令行注入。停止经
-    powershell `Get-CimInstance` 按命令行模式匹配终止 node 进程（字符类技巧 `paperclip[a]i`
-    避免过滤串自匹配）；外置 PostgreSQL 服务不随 server 停止（系统服务语义）。
-    注：内置 Administrator 账户的全权令牌使内嵌 PostgreSQL 无法原生运行——外置 PG 服务
-    （如 PostgreSQL 17 Windows 服务）是 Windows 上的唯一支持形态。曾用 WSL 承载（规避
-    令牌问题），已废弃：WSL 与 Windows 双环境导致 CLI 检测（Windows 侧）与 agent 执行
-    （WSL 侧）不一致（grok 装在用户级 PATH，WSL 互操作不可见，agent 无法启动）。
-  - macOS/Linux：原生运行 `npx -y paperclipai@latest run`（detached + setsid/nohup 守护，日志
-    `~/.paperclip/server-run.log`，进程独立于 ZCode 存活）；停止 pkill（同款字符类技巧）。
-  - npx 解析：GUI/服务进程 PATH 常不含 nvm——Windows 依次搜 `C:\nvm4w\nodejs\npx.cmd` →
-    `%APPDATA%\npm\npx.cmd` → PATH 兜底；POSIX 依次搜 `~/.nvm/versions/node/<最新>/bin` →
-    Homebrew → 系统 PATH。
-- **时序**：start = 探 health（已 ok → 幂等 running）→ 发启动命令 → 轮询 health（3s 间隔、上限
-  **300s**——实测冷启动约 130s，npx 解析另需约 30s）→ running / 超时 error（detail 带日志
-  位置）。stop = 探 health（未运行 → 幂等 stopped）→ 发停止命令 → 轮询 health 直到失败（2s 间
-  隔、上限 20s）。启动成功后服务侧主动重连一次（不等 WS 退避）。
+  - Windows：**服务在独立终端窗口长期运行**（`cmd /c start "Paperclip Server" /D <安装目录>
+    cmd /k node <入口> run`）——服务自带控制台后，其拉起的全部控制台子进程（pg_dump 备份、
+    psql、git、各类探测）继承该控制台而不新建可见窗口，彻底消除"黑窗口闪一下自动关"
+    （无头形态下 paperclipai 多数 spawn 缺 windowsHide，无法逐一堵漏；终端形态是釜底抽薪，
+    也恢复了用户此前"开终端长期跑服务"的使用习惯）。日志随窗口实时可见（不再落
+    server-run.log）；`/k` 保证服务退出后窗口保留现场（启动失败可见报错）。停止经 powershell
+    `Get-CimInstance` 按命令行模式匹配同时终止服务 node 与窗口 cmd（`Name='node.exe' OR
+    Name='cmd.exe'` + `paperclip[a]i` 字符类技巧，停止后不留空提示符窗口）；外置 PostgreSQL
+    服务不随 server 停止（系统服务语义）。注：内置 Administrator 账户的全权令牌使内嵌
+    PostgreSQL 无法原生运行——外置 PG 服务（如 PostgreSQL 17 Windows 服务）是 Windows 上的
+    唯一支持形态。npm 经 `cmd.exe /c npm.cmd` 执行（execFile 不能直接跑 .cmd）；数据库连接串
+    持久化在实例配置（`~/.paperclip/instances/default/config.json`），无需命令行注入。
+  - macOS/Linux：node 绝对路径 detached spawn（即 setsid(2)）；npm 直接 execFile；停止 pkill
+    （同款字符类技巧）。
+  - node/npm 解析：GUI/服务进程 PATH 常不含 nvm——Windows 依次搜 `C:\nvm4w\nodejs\` 的
+    node.exe/npm.cmd → `%APPDATA%\npm\` 的 npm.cmd（node 兜底 PATH）；POSIX 依次搜
+    `~/.nvm/versions/node/<最新>/bin` → Homebrew → 系统 PATH。
+- **时序**：start = 探 health（已 ok → 幂等 running）→ 读本地版本（缺失 → 首次安装 latest）
+  → node 启动 → 轮询 health（3s 间隔、上限 **300s**；首次安装的 npm install 超时另计 8 分钟）
+  → running / 超时 error（detail 带日志位置）。stop = 探 health（未运行 → 幂等 stopped）→
+  发停止命令 → 轮询 health 直到失败（2s 间隔、上限 20s）。启动成功后服务侧主动重连一次
+  （不等 WS 退避）。
+- **更新语义（手动触发）**：`checkLocalServerUpdate()` 返回
+  `{installedVersion, latestVersion, updateAvailable}`——`npm view paperclipai version` 查
+  registry 最新版（15s 超时，失败 latestVersion=null 静默），与本地安装版本按 calver 比较；
+  结果内存缓存 10 分钟（TTL 内重复调用不联网）。UI 在启动成功后自动调用一次，
+  `updateAvailable=true` 时显示更新标识。`updateLocalServer()` = `npm install
+  paperclipai@latest --prefix <安装目录>` 覆盖安装 → 更新前服务在运行则 stop + start 重启到
+  新版本，未运行则仅安装；更新中由调用方（UI）呈现，协议状态机不新增枚举。
+- **安装产物补丁（仅 Windows，安装/更新后自动重放）**：paperclipai 的 pg_dump 每小时备份与
+  psql 恢复 spawn 未带 `windowsHide`，从无控制台的服务宿主拉起控制台程序会弹可见黑窗
+  （用户表现为「黑窗口闪一下自动关」）。`applyInstalledPaperclipWindowsHidePatch` 在
+  npm install 后为两处 spawn 补上 `windowsHide: true`；模式不匹配（上游已修/已打过）时
+  静默跳过，绝不阻断安装；上游修复后本补丁自然退化为 no-op。
 - **停止语义**：按 `paperclipai` 进程模式匹配，可能命中用户其他同名进程——停止仅由用户显式
   触发（面板/设置页按钮），个人机语义可接受。launchd/systemd 托管的 Paperclip（macOS
   managed install）与本机制互不冲突：health 守卫保证幂等。
 - 实现位于 `packages/services/src/paperclip/paperclipLocalServer.ts`（依赖全注入可测）；UI 入口：
-  Paperclip 面板断连引导区「启动本地服务」+ 连接状态条「停止服务」+ 设置页「本地服务」块。
+  Paperclip 面板断连引导区「启动本地服务」+ 连接状态条（版本徽章 +「有新版本」标识 +
+  「更新」按钮）+ 设置页「本地服务」块。
 
 ## 数据流与事件顺序
 

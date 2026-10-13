@@ -21,6 +21,7 @@ import type {
   PaperclipLocalAdapterCandidate,
   PaperclipProject,
   PaperclipLocalServerStatus,
+  PaperclipLocalServerVersionInfo,
   PaperclipInteraction,
   PaperclipIssueComment,
   PaperclipRunSnapshot,
@@ -49,6 +50,12 @@ export interface UsePaperclipState {
   refresh: () => Promise<void>;
   /** 启动本机 Paperclip server（幂等）；成功后自动刷新连接与列表。 */
   startLocalServer: () => Promise<PaperclipLocalServerStatus | null>;
+  /** 本地/最新版本对比（启动成功后自动拉取一次；registry 失败 latestVersion=null）。 */
+  localServerVersionInfo: PaperclipLocalServerVersionInfo | null;
+  /** 手动检查更新（绕过 UI 节流，直接调服务端 TTL 缓存的 checkUpdate）。 */
+  checkLocalServerUpdate: () => Promise<PaperclipLocalServerVersionInfo | null>;
+  /** 手动更新到最新版并按需重启服务；完成后再拉一次版本对比。 */
+  updateLocalServer: () => Promise<PaperclipLocalServerStatus | null>;
   /** 停止本机 Paperclip server；完成后刷新面板回到断连引导态。 */
   stopLocalServer: () => Promise<PaperclipLocalServerStatus | null>;
   createIssue: (input: PaperclipCreateIssueInput) => Promise<boolean>;
@@ -244,18 +251,57 @@ export function usePaperclip(): UsePaperclipState {
     return () => clearInterval(timer);
   }, [paperclipService, connection?.state, loadAll]);
 
-  /** 启动本机 server：成功（running）后自动刷新面板；失败把 detail 落到操作错误提示。 */
+  /** 版本对比结果：启动成功后自动拉取（spec：UI 在启动成功后调用一次）。 */
+  const [localServerVersionInfo, setLocalServerVersionInfo] =
+    useState<PaperclipLocalServerVersionInfo | null>(null);
+
+  const checkLocalServerUpdate = useCallback(async (): Promise<PaperclipLocalServerVersionInfo | null> => {
+    if (!paperclipService) return null;
+    try {
+      const info = await paperclipService.checkLocalServerUpdate();
+      setLocalServerVersionInfo(info);
+      return info;
+    } catch {
+      // registry 查询失败静默：latestVersion=null 语义已覆盖。
+      return null;
+    }
+  }, [paperclipService]);
+
+  // 连接成功即拉一次版本对比：服务可能早已在运行（面板直连），用户不点「启动」
+  // 也应看到版本徽章与更新标识（spec：启动成功后自动获取，此处覆盖已运行场景）。
+  const connected = connection?.state === "connected";
+  useEffect(() => {
+    if (connected) {
+      void checkLocalServerUpdate();
+    }
+  }, [connected, checkLocalServerUpdate]);
+
+  /** 手动更新：安装 latest 并按需重启；完成后刷新版本对比与面板。 */
+  const updateLocalServer = useCallback(async (): Promise<PaperclipLocalServerStatus | null> => {
+    if (!paperclipService) return null;
+    setActionError(null);
+    const status = await paperclipService.updateLocalServer();
+    if (status.detail) {
+      setActionError(status.detail);
+    }
+    await loadAll();
+    void checkLocalServerUpdate();
+    return status;
+  }, [paperclipService, loadAll, checkLocalServerUpdate]);
+
+  /** 启动本机 server：成功（running）后自动刷新面板并拉取版本对比；失败把 detail 落到操作错误提示。 */
   const startLocalServer = useCallback(async (): Promise<PaperclipLocalServerStatus | null> => {
     if (!paperclipService) return null;
     setActionError(null);
     const status = await paperclipService.startLocalServer();
     if (status.state === "running") {
       await loadAll();
+      void checkLocalServerUpdate();
     } else if (status.detail) {
       setActionError(status.detail);
     }
     return status;
-  }, [paperclipService, loadAll]);
+  }, [paperclipService, loadAll, checkLocalServerUpdate]);
 
   /** 停止本机 server：成功（stopped）后刷新面板（自然回到断连引导态）。 */
   const stopLocalServer = useCallback(async (): Promise<PaperclipLocalServerStatus | null> => {
@@ -298,6 +344,9 @@ export function usePaperclip(): UsePaperclipState {
     refresh: loadAll,
     startLocalServer,
     stopLocalServer,
+    localServerVersionInfo,
+    checkLocalServerUpdate,
+    updateLocalServer,
     createIssue: actions.createIssue,
     markDone: actions.markDone,
     updateAgent: actions.updateAgent,

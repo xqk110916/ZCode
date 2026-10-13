@@ -278,6 +278,21 @@ export function createPaperclipService(deps: PaperclipServiceFactoryDeps): Paper
 
     getLocalServerStatus: () => localServer.getStatus(),
 
+    checkLocalServerUpdate: () => localServer.checkUpdate(),
+
+    async updateLocalServer(): Promise<PaperclipLocalServerStatus> {
+      const status = await localServer.update();
+      if (status.state === "running") {
+        // 更新后重启完成：主动重连（与 startLocalServer 同口径，不等 WS 退避）。
+        resolvedCompany = null;
+        ensureAttempted = true;
+        void ensureReady().catch(() => {
+          // 失败快照已由 ensureReady 落为 disconnected；下一次调用重试。
+        });
+      }
+      return status;
+    },
+
     listAgents: () => withCompanyId((companyId) => rest.listAgents(companyId)),
 
     listAdapterModels: (adapterType) =>

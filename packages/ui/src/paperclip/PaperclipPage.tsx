@@ -69,6 +69,7 @@ export function PaperclipPage({
   const [addAgentOpen, setAddAgentOpen] = useState(false);
   const [startingLocalServer, setStartingLocalServer] = useState(false);
   const [stoppingLocalServer, setStoppingLocalServer] = useState(false);
+  const [updatingLocalServer, setUpdatingLocalServer] = useState(false);
   // 创建任务编排（提交/默认值/toast）见 usePaperclipCreateSubmit。
   const {
     submitting,
@@ -95,6 +96,20 @@ export function PaperclipPage({
       }
     } finally {
       setStartingLocalServer(false);
+    }
+  };
+
+  const handleUpdateLocalServer = async () => {
+    setUpdatingLocalServer(true);
+    try {
+      const status = await paperclip.updateLocalServer();
+      if (status && status.detail) {
+        toast(status.detail, { variant: "warning" });
+      } else {
+        toast(intl.formatMessage({ id: "paperclip.localServer.updated" }));
+      }
+    } finally {
+      setUpdatingLocalServer(false);
     }
   };
 
@@ -215,7 +230,10 @@ export function PaperclipPage({
         serverUrl={paperclip.connection?.serverUrl ?? ""}
         refreshing={paperclip.refreshing}
         stoppingLocalServer={stoppingLocalServer}
+        versionInfo={paperclip.localServerVersionInfo}
+        updatingLocalServer={updatingLocalServer}
         onStopLocalServer={() => void handleStopLocalServer()}
+        onUpdateLocalServer={() => void handleUpdateLocalServer()}
         onRefresh={() => void paperclip.refresh()}
         onCreateTask={openCreateTask}
       />

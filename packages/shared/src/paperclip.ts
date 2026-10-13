@@ -268,8 +268,20 @@ export type PaperclipLocalServerState =
 
 export interface PaperclipLocalServerStatus {
   state: PaperclipLocalServerState;
-  /** 失败原因 / 平台策略提示（如未找到 npx）。 */
+  /** 失败原因 / 平台策略提示（如未找到 node/npm）。 */
   detail?: string;
+  /** 固定安装目录（~/.paperclip/server）中已安装的 paperclipai 版本；未安装为 undefined。 */
+  installedVersion?: string;
+}
+
+/** 本地服务版本对比结果（checkLocalServerUpdate）。 */
+export interface PaperclipLocalServerVersionInfo {
+  /** 本地已安装版本；从未安装为 null。 */
+  installedVersion: string | null;
+  /** registry 最新版本；网络失败为 null（静默降级，不影响主流程）。 */
+  latestVersion: string | null;
+  /** 本地版本落后于 registry 最新版时 true（两者都已知才可能为 true）。 */
+  updateAvailable: boolean;
 }
 
 // ---------------------------------------------------------------------------

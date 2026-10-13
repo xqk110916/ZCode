@@ -4,6 +4,15 @@
 
 ## [Unreleased] - 2026-10-13
 
+### 新增
+
+#### Paperclip 本地服务 · 本地版本优先 + 手动更新
+
+- **启动不再追最新版**：本地服务改为始终运行固定安装目录（`~/.paperclip/server`，npm `--prefix` 产物）的已安装版本——`node <安装目录>/paperclipai/dist/index.js` 直启，不经 npx、不联网。此前每次启动都 `npx -y paperclipai@latest`（每次 registry 解析 + 可能重新下载，代理网络下实测冷启动 6 分钟，超过 UI 5 分钟等待上限，表现为「一直在安装」）。本地从未安装时才一次性 `npm install paperclipai@latest`（8 分钟超时）。实测停止→重启从 6 分钟降到约 20 秒（仅剩数据库迁移）。
+- **手动更新**：新增 `checkLocalServerUpdate()`（本地版本 vs registry 最新，`npm view` 15s 超时静默降级，结果缓存 10 分钟）与 `updateLocalServer()`（覆盖安装 latest；更新前服务在运行则自动重启到新版本）。连接状态条新增版本徽章（v2026.1012.0），有新版本时显示「有新版本 x.y.z」标识与「更新」按钮；面板连接成功或启动成功后自动拉取一次版本对比。
+- calver 分段数值比较（`2026.1012.0` > `2026.9.9`，字符串比较会判反）；测试 18 用例全过（固定目录直启 / 首次安装 / 幂等 / 单飞 / 停止 / 版本比较 / 更新重启序列 / 安装补丁幂等）。
+- **修复周期性黑窗闪现（Windows）**：无头形态下服务进程无控制台，paperclipai 多数子进程 spawn 缺 `windowsHide`（pg_dump 每小时备份、psql 等），各自新建可见控制台窗口闪现后关闭。Windows 启动改为**独立终端窗口长期运行**（`start "Paperclip Server" cmd /k node …`）——服务自带控制台后全部子进程继承之，闪窗彻底消除，日志随窗口实时可见，停止时连窗口一并关闭；恢复用户"开终端长期跑服务"的使用习惯。安装/更新流程同时自动为安装产物补 `windowsHide`（`applyInstalledPaperclipWindowsHidePatch`，防御纵深，上游修复后自然失效）。
+
 ### 修复
 
 - **修复 v3.15.1 合并遗留的 web 入口回归**：合并时 `packages/web/src/main.tsx` 回落到了合并前旧版（380 行），上游手机远控首页结构（`createHomeOnlyWebRemoteControlServices`、relay 恢复链路等约 2100 行）整体丢失。现恢复上游完整版本并重放我方增量（`syncActiveTaskSession` 上报 `/api/active-session`，服务 `zcode send`）。此前 pre-push 钩子连续失败的 4 个受影响单测文件（`settingsPageConfig` / `homeOnlyWebRemoteControlServices` / `externalRelayFrameGapRecovery` / `webRemoteControlAssistantCodeCommentCapability`）全部转绿，钩子恢复拦截能力；`settingsPageConfig` 期望列表同步补上 fork 的 `paperclip` 分区。typecheck / lint 0 错误，web 入口与对话链路实测无回归。
