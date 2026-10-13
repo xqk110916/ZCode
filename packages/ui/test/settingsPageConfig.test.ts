@@ -38,7 +38,7 @@ describe("settingsPageConfig", () => {
       },
       {
         id: "agentCapabilities",
-        sections: ["memory", "subagents", "plugin", "mcp", "skill", "commands", "hooks"],
+        sections: ["memory", "subagents", "plugin", "mcp", "skill", "commands", "hooks", "paperclip"],
       },
       {
         id: "dataAndStats",
@@ -57,6 +57,7 @@ describe("settingsPageConfig", () => {
       "skill",
       "commands",
       "hooks",
+      "paperclip",
       "browser",
       "shortcuts",
       "usage",
@@ -78,6 +79,7 @@ describe("settingsPageConfig", () => {
       "skill",
       "commands",
       "hooks",
+      "paperclip",
       "browser",
       "shortcuts",
       "usage",

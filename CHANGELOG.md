@@ -2,6 +2,12 @@
 
 本文件记录基于上游 ZCode（zai-org/ZCode）的自定义改动。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased] - 2026-10-13
+
+### 修复
+
+- **修复 v3.15.1 合并遗留的 web 入口回归**：合并时 `packages/web/src/main.tsx` 回落到了合并前旧版（380 行），上游手机远控首页结构（`createHomeOnlyWebRemoteControlServices`、relay 恢复链路等约 2100 行）整体丢失。现恢复上游完整版本并重放我方增量（`syncActiveTaskSession` 上报 `/api/active-session`，服务 `zcode send`）。此前 pre-push 钩子连续失败的 4 个受影响单测文件（`settingsPageConfig` / `homeOnlyWebRemoteControlServices` / `externalRelayFrameGapRecovery` / `webRemoteControlAssistantCodeCommentCapability`）全部转绿，钩子恢复拦截能力；`settingsPageConfig` 期望列表同步补上 fork 的 `paperclip` 分区。typecheck / lint 0 错误，web 入口与对话链路实测无回归。
+
 ## [Unreleased] - 2026-10-12
 
 ### 新增
