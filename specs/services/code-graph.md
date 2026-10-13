@@ -27,13 +27,28 @@
 
 每个 HardcodedItem 记录：value + kind + file:line + 前后 3 行上下文代码。
 
-## MCP 工具（3 个，挂载在 db-board agent）
+## MCP 工具（4 个，挂载在 db-board agent）
 
 | 工具 | 用途 |
 |------|------|
 | `trace_impact` | 给定方法名 → BFS 图遍历 → 受影响的页面/端点/表/方法/硬编码依赖 |
 | `find_hardcoded` | 按 kind/value/file 搜索硬编码项 |
 | `query_code_graph` | 按名称/类型/文件搜索图谱节点 |
+| `build_code_graph` | 扫描指定项目根目录并构建图谱（全量覆盖；外部 agent 可自助触发） |
+
+## 外部 MCP 客户端接入
+
+`getMcpServer` 成功启动后，端点描述符持久化到 `~/.zcode/v2/db-board-mcp.json`：
+
+```json
+{ "name": "db_board", "url": "http://127.0.0.1:<port>/mcp", "token": "<bearer>", "updatedAt": "..." }
+```
+
+任何 MCP 客户端（Claude Code / Cursor / LangChain 等）读此文件即可连接：
+- 传输：Streamable HTTP，header `Authorization: Bearer <token>`
+- 仅监听 127.0.0.1，不暴露局域网
+- token 随宿主重启轮换；server dispose 时删除该文件（避免外部拿到失效 token）
+- 注意：工作区绑定门控只作用于 ZCode 会话创建链；持有 token 的外部客户端可直接调用全部工具（图谱工具均为只读）
 
 ## 接口
 

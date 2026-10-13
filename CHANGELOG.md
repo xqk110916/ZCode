@@ -42,7 +42,8 @@
 - **硬编码检测**：自动识别写死的用户名/用户 ID/部门 ID/角色 ID/字典 ID/状态码/配置键（roma.js handleSelectData 的 jiyaosw/jiyao/chengyilin 全部命中）。
 - **影响范围分析**：trace_impact 工具沿调用链 BFS，返回「改了方法 X → 影响哪些前端页面 / API 端点 / 数据库表 / 硬编码依赖」。
 - **特殊情况标注**：自动检测代码中的「特殊处理」「TODO」「FIXME」「临时」注释（878 个，HJT 实测）。
-- **3 个 MCP 工具**：trace_impact / find_hardcoded / query_code_graph（挂载在数据库助手 agent 上，工具总数从 14 → 17）。
+- **4 个 MCP 工具**：trace_impact / find_hardcoded / query_code_graph / build_code_graph（挂载在数据库助手 agent 上，工具总数从 14 → 18）。
+- **外部 MCP 客户端接入**：端点描述符（url + token）持久化到 ~/.zcode/v2/db-board-mcp.json，Claude Code / Cursor / LangChain 等任何 MCP 客户端读此文件即可直连 db_board server（仅 127.0.0.1，server 停止时自动清理文件）。
 - 单元测试 16 用例（提取器 / 影响分析 / 图搜索）全过。
 
 ## [Unreleased] - 2026-10-11

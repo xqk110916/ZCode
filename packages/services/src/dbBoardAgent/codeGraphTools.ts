@@ -197,5 +197,42 @@ export function createCodeGraphTools(ctx: CodeGraphToolContext): CodeGraphTool[]
         return lines.join("\n");
       },
     },
+
+    {
+      name: "build_code_graph",
+      description:
+        "扫描指定代码仓库并构建知识图谱（方法影响分析 / 硬编码检测 / 特殊情况标注的基础）。" +
+        "全量扫描可能耗时数十秒到数分钟（视仓库大小）。构建后 trace_impact / find_hardcoded / " +
+        "query_code_graph 即可查询。重复构建会全量覆盖（增量构建待后续版本）。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: {
+            type: "string",
+            description: "项目根目录的绝对路径（如 F:\\masterCode\\HJT）",
+          },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+      handler: async (raw) => {
+        const args = z
+          .object({ project_root: z.string().min(1).max(500) })
+          .strict()
+          .parse(raw);
+        const projectRoot = args.project_root.trim();
+        const result = await codeGraphService.buildGraph(projectRoot);
+        const { doc, elapsedMs } = result;
+        const seconds = (elapsedMs / 1000).toFixed(1);
+        return [
+          `代码图谱构建完成（${seconds}s）：`,
+          `- 节点总数：${doc.stats.nodeCount}（方法 ${doc.stats.methodCount} / 端点 ${doc.stats.endpointCount} / 前端调用 ${doc.stats.apiCallCount} / 硬编码 ${doc.stats.hardcodedCount}）`,
+          `- 边总数：${doc.stats.edgeCount}`,
+          `- 构建时间：${doc.builtAt}`,
+          "",
+          "现在可以用 trace_impact / find_hardcoded / query_code_graph 查询了。",
+        ].join("\n");
+      },
+    },
   ];
 }

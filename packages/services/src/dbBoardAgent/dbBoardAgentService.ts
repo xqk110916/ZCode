@@ -4,6 +4,17 @@ import type { ICodeGraphService } from "../dbBoardKnowledge/codeGraphService.js"
 import type { IDbBoardAgentService } from "./dbBoardAgent.js";
 import { createDbBoardAgentMcpServerHost } from "./dbBoardAgentMcpServer.js";
 import { workspaceBindingKey } from "../dbBoard/dbBoardBindings.js";
+import { unlink } from "node:fs/promises";
+import { join } from "node:path";
+import { atomicWriteJson } from "../fs/atomicFileUtils.js";
+import { getAppConfigDir } from "../paths.js";
+
+/** MCP 端点描述符持久化文件（供外部 MCP 客户端发现 db_board server）。 */
+const MCP_ENDPOINT_FILE = "db-board-mcp.json";
+
+function mcpEndpointFilePath(): string {
+  return join(getAppConfigDir(), MCP_ENDPOINT_FILE);
+}
 
 /**
  * Node 侧实现（仅 ./node 入口引用）：懒启动 loopback MCP server，
@@ -58,6 +69,14 @@ export function createDbBoardAgentService(options: {
       // 携带 workspaceKey 时先经 getConnectionState 把激活连接拉齐到绑定连接（幂等）。
       const snapshot = await dbBoardService.getConnectionState(workspaceKey ?? undefined);
       const endpoint = await host.start();
+      // 端点描述符持久化：外部 MCP 客户端（Claude Code / Cursor / LangChain 等）
+      // 读此文件发现 db_board server。仅写本地用户目录，不进 git/日志。
+      await atomicWriteJson(mcpEndpointFilePath(), {
+        name: "db_board",
+        url: endpoint.url,
+        token: endpoint.token,
+        updatedAt: new Date().toISOString(),
+      } as unknown as Record<string, unknown>);
       let state: DbBoardConnectionState = snapshot.state;
       let label = "未配置";
       try {
@@ -73,6 +92,8 @@ export function createDbBoardAgentService(options: {
     },
     dispose() {
       host.dispose();
+      // server 已停，端点文件过期：清理避免外部客户端拿到失效 token（best-effort）。
+      unlink(mcpEndpointFilePath()).catch(() => undefined);
     },
   };
 }
