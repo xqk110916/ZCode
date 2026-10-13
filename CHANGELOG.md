@@ -29,6 +29,7 @@
 
 ### 文档与工程
 
+- 新增 `docs/boardhub-project-guide.md`：BoardHub（数据库看板 + 任务编排独立应用）完整项目文档——面向不基于 ZCode、用其他 Agent/技术栈重写同类项目的工程师，涵盖架构、数据模型、安全边界（无删除/只读四重强制/审计回退）、MCP Agent 集成协议（17 工具）、关键设计决策（Electron 选型/端口协商/跨进程锁/崩溃自愈/固定目录安装）、移植最小自研清单与验收场景。
 - AGENTS.md 新增「Agent CLI 重建与 coding-plan 401 过渡方案」：合并上游后 CLI 必须 turbo 全量重建（单包构建会内联过期的 `packages/*/dist/` 旧产物）；web 任务必现 `auth_failed 401` 的根因为官方二进制对 coding-plan 端点新增客户端请求签名（约 2026-10-10 起网关强制校验，开源 v3.15.1 尚未包含），dev server 过渡方案为 `ZCODE_AGENT_SERVER_COMMAND(_ARGS_JSON)` 拉起官方桌面端 CLI，含切回条件。
 
 ## [Unreleased] - 2026-10-11
